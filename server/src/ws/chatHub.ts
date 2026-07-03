@@ -123,19 +123,28 @@ export class ChatHub {
   }
 
   private notifyOtherParticipants(message: ChatMessage): void {
-    // Notify subscribers of the subject (except the author and the subject).
-    const room = this.repo.getRoomById(message.roomId);
-    if (!room) return;
-    const recipients = this.repo.subscriberIdsForSubject(room.subjectId);
-    for (const userId of recipients) {
-      if (userId === message.authorId) continue;
-      this.notifications.push(
-        userId,
-        'CHAT_MESSAGE',
-        `New message in ${room.subjectName}'s celebration chat`,
-        `${message.authorName}: ${message.body.slice(0, 80)}`,
-        { roomId: room.id, messageId: message.id },
-      );
-    }
+    // The message itself is already persisted and broadcast to the room by the
+    // time we get here, so the notification fan-out is deferred off the send
+    // hot path (setImmediate) and its per-recipient inserts are collapsed into
+    // a single transaction — one commit/fsync instead of one per subscriber.
+    setImmediate(() => {
+      const room = this.repo.getRoomById(message.roomId);
+      if (!room) return;
+      const recipients = this.repo
+        .subscriberIdsForSubject(room.subjectId)
+        .filter((userId) => userId !== message.authorId);
+      if (recipients.length === 0) return;
+      this.repo.transaction(() => {
+        for (const userId of recipients) {
+          this.notifications.push(
+            userId,
+            'CHAT_MESSAGE',
+            `New message in ${room.subjectName}'s celebration chat`,
+            `${message.authorName}: ${message.body.slice(0, 80)}`,
+            { roomId: room.id, messageId: message.id },
+          );
+        }
+      });
+    });
   }
 }

@@ -267,6 +267,15 @@ export class Repository {
     this.db.prepare('UPDATE notifications SET read = 1 WHERE user_id = ?').run(userId);
   }
 
+  /**
+   * Run a set of writes inside a single transaction so they commit (and fsync)
+   * once instead of per-statement. Used to collapse the per-recipient
+   * notification fan-out into one commit.
+   */
+  transaction<T>(fn: () => T): T {
+    return this.db.transaction(fn)();
+  }
+
   // ---- chat rooms --------------------------------------------------------
   getOrCreateRoomForSubject(subjectId: string, roomId: string): ChatRoom {
     const existing = this.db
