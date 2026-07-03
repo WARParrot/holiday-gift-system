@@ -14,6 +14,31 @@ the server stores per-user tokens and refreshes them automatically.
 The switch is automatic and per-provider: a provider is **live** iff **both** its
 `*_CLIENT_ID` and `*_CLIENT_SECRET` are set. Otherwise it's demo.
 
+## Where to put the credentials (`.env`)
+
+The server auto-loads a `.env` file from the **server package root**
+(`server/.env`) at startup — resolved relative to the server root, so it works
+regardless of the working directory the process is launched from (handy on
+Windows). Get started by copying the template:
+
+```bash
+cd server
+cp .env.example .env      # Windows PowerShell: copy .env.example .env
+# then edit .env and fill in the values below
+```
+
+Notes:
+- **Real OS/shell/service environment variables take precedence** over `.env`
+  (the loader never overrides an already-set variable), so `.env` is a
+  convenient default, not a way to override production config.
+- `.env` is git-ignored — never commit real secrets. `.env.example` is the
+  tracked, secret-free template.
+- To load from a different path, set `DOTENV_CONFIG_PATH=/abs/path/to/.env`.
+- On Windows you can alternatively set these as user/system environment
+  variables (`setx`, or *Edit environment variables for your account*) or inline
+  per PowerShell session (`$env:NAME="value"`) — any of these work since the app
+  reads `process.env`; `.env` is just the least error-prone option.
+
 ---
 
 ## How the flow works
@@ -53,7 +78,7 @@ Google redirects back                (GET /api/calendar/oauth/google/callback?co
    https://YOUR_HOST/api/calendar/oauth/google/callback
    ```
    (for local dev: `http://localhost:4000/api/calendar/oauth/google/callback`)
-5. Copy the client id/secret into your environment:
+5. Add the client id/secret to `server/.env`:
    ```bash
    GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
    GOOGLE_CLIENT_SECRET=xxxxxxxx
@@ -61,6 +86,7 @@ Google redirects back                (GET /api/calendar/oauth/google/callback?co
    # optional: GOOGLE_REDIRECT_URI=... if you want a non-default path
    # optional: GOOGLE_CALENDAR_ID=primary
    ```
+   Restart the server after editing `.env`.
 
 The adapter writes an all-day, `FREQ=YEARLY` event via Calendar API v3, using a
 deterministic event id derived from the subscriber+subject so re-syncing updates
@@ -81,7 +107,7 @@ OAuth2 bearer token.
    ```
 3. Under **Permissions**, grant calendar access and email login (scopes
    `calendar:all` and `login:email`).
-4. Copy the client id/secret into your environment:
+4. Add the client id/secret to `server/.env`:
    ```bash
    YANDEX_CLIENT_ID=xxxxxxxx
    YANDEX_CLIENT_SECRET=xxxxxxxx
@@ -89,6 +115,7 @@ OAuth2 bearer token.
    # optional overrides:
    # YANDEX_CALDAV_PATH_TEMPLATE=/calendars/{login}/events-default/
    ```
+   Restart the server after editing `.env`.
 
 The adapter serialises each birthday to a single-VEVENT `.ics` resource (RFC
 5545: CRLF endings, 75-octet line folding, TEXT escaping, all-day `VALUE=DATE`

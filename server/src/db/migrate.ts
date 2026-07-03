@@ -1,3 +1,5 @@
+// Load .env FIRST (side-effecting import) so migrate honours the same config.
+import '../env.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';

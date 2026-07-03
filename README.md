@@ -16,6 +16,27 @@ This repository is a **monorepo** with two packages:
 > Read it first — it explains *why* every subsystem is built the way it is,
 > including the secret-chat exclusion model and the crowdfunding pseudo-bank.
 
+## What's new in 1.4 (dependency-security pass + real `.env` loading)
+
+- **Vulnerable dependencies patched.** `npm audit` reports **0 vulnerabilities**
+  on both packages (was 7 on the server, 6 on the web). Fixes:
+  - server: `express` 4.21.2 → **4.22.2** (patches transitive `path-to-regexp`
+    ReDoS, `qs` DoS, `body-parser`), `ws` 8.18.0 → **8.21.0** (uninitialised
+    memory disclosure + fragmate DoS), plus `jsonwebtoken`/`cors`/`zod`/`tsx`/
+    `typescript` bumped to current patch lines;
+  - web: `react-router-dom` 6.28.0 → **6.30.4** (XSS via open redirect),
+    `vite` 5.4.11 → **6.4.3** (dev-server path traversal / `fs.deny` bypass +
+    pulls a patched `esbuild`), `postcss` 8.4.49 → **8.5.16** (XSS in stringify),
+    `@vitejs/plugin-react`/`zustand`/`typescript` bumped.
+  - All bumps are pinned to exact versions (no floating ranges), consistent with
+    the repo convention and to keep the audited set reproducible.
+- **Real `.env` loading.** The server now auto-loads `server/.env` at startup
+  (`dotenv`, via `src/env.ts`), resolved relative to the server root so it works
+  from any working directory (not just the package folder). Real OS/shell
+  environment variables still take precedence; `.env` is git-ignored and
+  `server/.env.example` is the tracked template. Copy it, fill in secrets, run —
+  no more setting variables inline every launch.
+
 ## What's new in 1.3 (real external-calendar sync)
 
 The Google/Yandex calendar integration is now a **real** OAuth2 + API

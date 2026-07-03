@@ -1,3 +1,6 @@
+// Load .env FIRST — this import has the side effect of populating process.env,
+// and it must run before anything reads config (loadConfig) below.
+import './env.js';
 import { createServer } from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';

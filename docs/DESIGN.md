@@ -530,3 +530,49 @@ redirect URIs. See `docs/CALENDAR_OAUTH_SETUP.md` and `server/.env.example`.
 Total: **34 tests**. Note: verified against mock protocol servers, **not**
 against live Google/Yandex (which needs real registered OAuth apps).
 
+---
+
+## 16. Version 1.4 — dependency-security pass + `.env` loading
+
+### 16.1 Vulnerability remediation
+
+An `npm audit` of the 1.3 tree flagged 7 server + 6 web advisories. All were
+fixable **within the existing major versions** (no breaking framework upgrades
+except a deliberate, verified Vite 5→6 bump), so the fix is a set of version
+bumps rather than code changes:
+
+- **server** — `express` 4.21.2 → 4.22.2 (transitive `path-to-regexp` ReDoS,
+  `qs` DoS, `body-parser`), `ws` 8.18.0 → 8.21.0 (uninitialised-memory
+  disclosure + tiny-fragment DoS); `jsonwebtoken`, `cors`, `zod`, `tsx`,
+  `typescript`, `@types/node` bumped to current patch lines.
+- **web** — `react-router-dom` 6.28.0 → 6.30.4 (XSS via open redirect),
+  `vite` 5.4.11 → 6.4.3 (dev-server path traversal, `server.fs.deny` bypass,
+  Windows launch-editor hash disclosure; also ships a patched esbuild ≥0.25),
+  `postcss` 8.4.49 → 8.5.16 (stringify XSS); `@vitejs/plugin-react`, `zustand`,
+  `typescript` bumped.
+
+Result: `npm audit` = **0 vulnerabilities** on both packages. Versions remain
+**exact-pinned** (no `^`/`~`) so the audited dependency set is reproducible; the
+regenerated `package-lock.json` files are the source of truth. The Vite 6 bump
+was verified by rebuilding the SPA and starting the dev server (the config uses
+only stable `plugins`/`server.proxy` options unaffected by the v5→v6 changes).
+
+### 16.2 `.env` loading (`src/env.ts`)
+
+1.3 read config straight from `process.env` with no file loader, so the
+`.env.example` was documentation only. 1.4 adds a real loader:
+
+- `src/env.ts` is a side-effecting module imported **first** at every process
+  entry point (`index.ts`, `db/migrate.ts`) — before any `loadConfig()` call.
+- It resolves `.env` relative to the **server root** (derived from the module's
+  own path via `import.meta.url`), so it loads regardless of the launch cwd —
+  important on Windows where the process may start from Explorer/a shortcut/a
+  service wrapper. `DOTENV_CONFIG_PATH` overrides the location.
+- `dotenv` never overrides an already-set variable, so **real OS/shell/service
+  env vars take precedence** over `.env` — the file is a convenient default,
+  not a production-config override.
+- `.env` / `.env.*` are now git-ignored (except `.env.example`) so real secrets
+  can't be committed.
+
+Only one new runtime dependency (`dotenv`, exact-pinned) was added.
+

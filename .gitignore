@@ -13,3 +13,8 @@ server/data/*.db-shm
 coverage/
 .vite/
 .claude
+
+# Environment / secrets — never commit real .env files (keep .env.example tracked)
+.env
+.env.*
+!.env.example
