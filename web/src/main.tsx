@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import './styles/index.css';
 import { Layout } from './components/Layout';
 import { useAuth } from './store/auth';
+import { api } from './api/client';
 import { LoginPage } from './pages/LoginPage';
 import { DirectoryPage } from './pages/DirectoryPage';
 import { GroupsPage } from './pages/GroupsPage';
@@ -16,7 +17,39 @@ import { AdminPage } from './pages/AdminPage';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const token = useAuth((s) => s.token);
+  const user = useAuth((s) => s.user);
+  const setUser = useAuth((s) => s.setUser);
+  const logout = useAuth((s) => s.logout);
+
+  // Restore the session on a fresh load: the token is persisted (localStorage)
+  // but `user` is not, so without this the app would render with user === null
+  // (no profile widget, no admin link) whenever you arrive with an existing
+  // token instead of going through the login form.
+  useEffect(() => {
+    if (!token || user) return;
+    let cancelled = false;
+    api
+      .me()
+      .then((res) => {
+        if (!cancelled) setUser(res.user);
+      })
+      .catch(() => {
+        // Token is stale/invalid — drop it and fall back to the login page.
+        if (!cancelled) logout();
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, user, setUser, logout]);
+
   if (!token) return <Navigate to="/login" replace />;
+  if (!user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">
+        Loading…
+      </div>
+    );
+  }
   return <>{children}</>;
 }
 

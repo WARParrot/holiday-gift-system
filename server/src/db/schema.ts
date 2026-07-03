@@ -156,6 +156,10 @@ let singleton: Db | null = null;
 export function openDatabase(dbFile: string): Db {
   const db = new Database(dbFile);
   db.pragma('journal_mode = WAL');
+  // In WAL mode NORMAL is crash-safe (only an OS-level power loss can drop the
+  // last transaction) and avoids an fsync on every commit, which materially
+  // speeds up write-heavy paths like chat fan-out.
+  db.pragma('synchronous = NORMAL');
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA_SQL);
   applyMigrations(db);
