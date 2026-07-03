@@ -12,3 +12,4 @@ server/data/*.db-shm
 .DS_Store
 coverage/
 .vite/
+.claude
