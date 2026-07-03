@@ -1,0 +1,87 @@
+# =========================
+# Зависимости
+# =========================
+node_modules/
+.pnp
+.pnp.js
+
+# =========================
+# Сборка и Артефакты
+# =========================
+# Стандартные папки для билдов (Vite, CRA, Webpack)
+dist/
+build/
+out/
+# Если используется Next.js
+.next/
+
+# =========================
+# TypeScript
+# =========================
+*.tsbuildinfo
+
+# =========================
+# Тестирование
+# =========================
+coverage/
+
+# =========================
+# Переменные окружения
+# =========================
+# Локальные файлы .env не должны попадать в репозиторий (содержат секреты)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Исключение: обычно безопасно и полезно коммитить пример конфигурации
+# !.env.example
+
+# =========================
+# Логи
+# =========================
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# =========================
+# Кэш и временные файлы
+# =========================
+.eslintcache
+.stylelintcache
+.parcel-cache
+.cache/
+
+# =========================
+# Системные файлы
+# =========================
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# =========================
+# IDE и редакторы кода
+# =========================
+# VS Code
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# WebStorm / IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Mac OS/Vim/прочее
+*~
+*.swp
+*.swo

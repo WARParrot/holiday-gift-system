@@ -1,0 +1,383 @@
+.app {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 1rem 3rem;
+}
+
+/* ---- Top bar ---- */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 10;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.nav {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.nav button {
+  background: none;
+  border: none;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+.nav button.active {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.topbar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.bell {
+  position: relative;
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+}
+
+.badge-count {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  padding: 0 5px;
+}
+
+.current-user {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.content {
+  padding-top: 1.5rem;
+}
+
+/* ---- Buttons ---- */
+.sub-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.35rem 0.7rem;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.sub-btn.active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.back-btn,
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  padding: 0;
+  margin-bottom: 0.75rem;
+}
+
+.link-btn {
+  margin: 0;
+}
+
+/* ---- Directory cards ---- */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.card-main {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 0;
+}
+
+.avatar {
+  font-size: 1.8rem;
+}
+
+.avatar.large {
+  font-size: 3rem;
+}
+
+.card-name {
+  font-weight: 600;
+}
+
+/* ---- Groups ---- */
+.group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.group-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.group-head h2 {
+  margin: 0;
+}
+
+.member-list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.member-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--border);
+}
+
+/* ---- Friend card ---- */
+.friend-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.friend-header h1 {
+  margin: 0;
+}
+
+.friend-card section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.tag-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0;
+  margin: 0;
+}
+
+.tag {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.85rem;
+}
+
+/* ---- Wishlist ---- */
+.wishlist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.wishlist-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.wishlist-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.wishlist-title {
+  font-weight: 600;
+}
+
+.wishlist-meta {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 0.35rem;
+}
+
+.badge {
+  font-size: 0.75rem;
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+}
+
+.badge-available {
+  background: #e6f4ea;
+  color: #1a7f37;
+}
+
+.badge-suggested {
+  background: #fff4e0;
+  color: #b26a00;
+}
+
+.badge-reserved {
+  background: #fde8e8;
+  color: #c0392b;
+}
+
+/* ---- Secret chat ---- */
+.secret-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.chat-message {
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+}
+
+.chat-message p {
+  margin: 0.25rem 0 0;
+}
+
+.chat-message-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.85rem;
+}
+
+.chat-input {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.chat-input input {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.chat-input button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+}
+
+/* ---- Notifications ---- */
+.notifications-panel {
+  position: absolute;
+  right: 1rem;
+  top: 60px;
+  width: 320px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: rgba(0, 0, 0, 0.1) 0 10px 25px;
+  padding: 1rem;
+  z-index: 20;
+}
+
+.notifications-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.notifications-head button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
+.notifications-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.notifications-list li {
+  border-left: 3px solid transparent;
+  padding: 0.25rem 0 0.25rem 0.5rem;
+}
+
+.notifications-list li.unread {
+  border-left-color: var(--accent);
+}
+
+.notifications-list p {
+  margin: 0;
+  font-size: 0.9rem;
+}
