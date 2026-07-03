@@ -222,10 +222,10 @@ const PROVIDERS: { id: CalendarProviderName; label: string }[] = [
 ];
 
 function CalendarTab() {
-  const [connections, setConnections] = useState<CalendarConnection[]>([]);
-  const [labels, setLabels] = useState<Record<string, string>>({ google: '', yandex: '' });
+  const [connections, setConnections] = useState<Array<CalendarConnection & { live: boolean }>>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<CalendarProviderName | null>(null);
 
   async function load() {
     const r = await api.calendarConnections();
@@ -233,6 +233,17 @@ function CalendarTab() {
   }
   useEffect(() => {
     void load();
+    // Surface the OAuth callback outcome if we've just been redirected back
+    // (the server bounces to /profile?calendar=..&status=..&detail=..).
+    const params = new URLSearchParams(window.location.search);
+    const cal = params.get('calendar');
+    const st = params.get('status');
+    if (cal && st) {
+      if (st === 'connected') setStatus(`Connected ${cal}${params.get('detail') ? ` (${params.get('detail')})` : ''}.`);
+      else setError(`Could not connect ${cal}: ${params.get('detail') || 'unknown error'}.`);
+      // Clean the query so a refresh doesn't re-show the banner.
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   }, []);
 
   const connected = (p: CalendarProviderName) => connections.find((c) => c.provider === p);
@@ -240,13 +251,21 @@ function CalendarTab() {
   async function connect(p: CalendarProviderName) {
     setError(null);
     setStatus(null);
-    const label = labels[p]?.trim() || `${p}-account`;
+    setBusy(p);
     try {
-      const res = await api.connectCalendar(p, label);
-      setStatus(`Connected ${p}. Synced ${res.eventsSynced} event(s) from your subscriptions.`);
+      const res = await api.startCalendarConnect(p);
+      if (res.mode === 'oauth') {
+        // Hand off to the provider's consent screen (full-page redirect).
+        window.location.href = res.authorizeUrl;
+        return;
+      }
+      // Demo mode: connected server-side immediately.
+      setStatus(`Connected ${p} (demo). Synced ${res.eventsSynced} event(s) from your subscriptions.`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Connect failed');
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -255,6 +274,8 @@ function CalendarTab() {
     await load();
   }
 
+  const anyDemo = connections.some((c) => !c.live) || PROVIDERS.some((p) => !(connected(p.id)?.live ?? true));
+
   return (
     <div className="space-y-4">
       <div>
@@ -262,17 +283,22 @@ function CalendarTab() {
         <p className="mt-1 text-xs text-slate-400">
           Connect a calendar to auto-add birthday events for people/groups you subscribe to with calendar sync enabled.
         </p>
-        <p className="mt-1 text-[11px] font-medium text-amber-600">
-          Demo integration — no real Google/Yandex OAuth. Connections and synced events are simulated and recorded
-          server-side so the flow is observable, but nothing is written to a real external calendar.
-        </p>
+        {anyDemo && (
+          <p className="mt-1 text-[11px] font-medium text-amber-600">
+            A provider shown as “demo” has no server-side OAuth credentials configured, so its sync is simulated
+            (recorded server-side, nothing written to a real external calendar). Configure credentials to enable live sync.
+          </p>
+        )}
       </div>
       {PROVIDERS.map((p) => {
         const conn = connected(p.id);
         return (
           <div key={p.id} className="rounded-lg border border-slate-200 p-3">
             <div className="flex items-center justify-between">
-              <span className="font-medium">{p.label}</span>
+              <span className="font-medium">
+                {p.label}
+                {conn && !conn.live && <span className="ml-2 text-[10px] font-semibold uppercase text-amber-600">demo</span>}
+              </span>
               {conn ? (
                 <span className="badge bg-emerald-100 text-emerald-700">Connected</span>
               ) : (
@@ -287,15 +313,9 @@ function CalendarTab() {
                 </button>
               </div>
             ) : (
-              <div className="mt-2 flex gap-2">
-                <input
-                  className="input"
-                  placeholder="account label / email"
-                  value={labels[p.id] ?? ''}
-                  onChange={(e) => setLabels({ ...labels, [p.id]: e.target.value })}
-                />
-                <button className="btn-primary text-xs" onClick={() => connect(p.id)}>
-                  Connect
+              <div className="mt-2">
+                <button className="btn-primary text-xs" disabled={busy === p.id} onClick={() => connect(p.id)}>
+                  {busy === p.id ? 'Connecting…' : `Connect ${p.label}`}
                 </button>
               </div>
             )}

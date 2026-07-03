@@ -2,6 +2,7 @@ import type { Database } from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import type {
   CalendarConnection,
+  CalendarOAuthToken,
   CalendarProviderName,
   CelebrationParticipantView,
   ChatMessage,
@@ -157,6 +158,68 @@ export class Repository {
 
   disconnectCalendar(userId: string, provider: CalendarProviderName): void {
     this.db.prepare('DELETE FROM calendar_connections WHERE user_id = ? AND provider = ?').run(userId, provider);
+    // Live OAuth tokens are part of the connection; drop them on disconnect.
+    this.db.prepare('DELETE FROM calendar_oauth_tokens WHERE user_id = ? AND provider = ?').run(userId, provider);
+  }
+
+  // ---- calendar OAuth tokens (live sync) --------------------------------
+  /** Insert or replace the stored OAuth token for a (user, provider). */
+  upsertCalendarToken(token: {
+    userId: string;
+    provider: CalendarProviderName;
+    accessToken: string;
+    refreshToken: string;
+    tokenType: string;
+    scope: string;
+    accountLogin: string;
+    expiresAt: number;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT INTO calendar_oauth_tokens
+           (user_id, provider, access_token, refresh_token, token_type, scope, account_login, expires_at, updated_at)
+         VALUES (@userId, @provider, @accessToken, @refreshToken, @tokenType, @scope, @accountLogin, @expiresAt, datetime('now'))
+         ON CONFLICT(user_id, provider) DO UPDATE SET
+           access_token = excluded.access_token,
+           -- keep the existing refresh token if the provider didn't return a new one
+           refresh_token = CASE WHEN excluded.refresh_token = '' THEN calendar_oauth_tokens.refresh_token ELSE excluded.refresh_token END,
+           token_type = excluded.token_type,
+           scope = excluded.scope,
+           account_login = excluded.account_login,
+           expires_at = excluded.expires_at,
+           updated_at = datetime('now')`,
+      )
+      .run(token);
+  }
+
+  getCalendarToken(userId: string, provider: CalendarProviderName): CalendarOAuthToken | undefined {
+    const r = this.db
+      .prepare('SELECT * FROM calendar_oauth_tokens WHERE user_id = ? AND provider = ?')
+      .get(userId, provider) as Record<string, unknown> | undefined;
+    return r ? this.mapCalendarToken(r) : undefined;
+  }
+
+  /** Update just the access token + expiry after a refresh. */
+  updateCalendarAccessToken(userId: string, provider: CalendarProviderName, accessToken: string, expiresAt: number): void {
+    this.db
+      .prepare(
+        "UPDATE calendar_oauth_tokens SET access_token = ?, expires_at = ?, updated_at = datetime('now') WHERE user_id = ? AND provider = ?",
+      )
+      .run(accessToken, expiresAt, userId, provider);
+  }
+
+  private mapCalendarToken(r: Record<string, unknown>): CalendarOAuthToken {
+    return {
+      userId: r.user_id as string,
+      provider: r.provider as CalendarProviderName,
+      accessToken: r.access_token as string,
+      refreshToken: (r.refresh_token as string) ?? '',
+      tokenType: (r.token_type as string) ?? 'Bearer',
+      scope: (r.scope as string) ?? '',
+      accountLogin: (r.account_login as string) ?? '',
+      expiresAt: (r.expires_at as number) ?? 0,
+      updatedAt: r.updated_at as string,
+    };
   }
 
   // ---- groups ------------------------------------------------------------

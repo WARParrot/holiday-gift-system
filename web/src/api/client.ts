@@ -135,9 +135,16 @@ export const api = {
     request<{ balance: number; transaction: WalletTransaction }>('/payments/topup', { method: 'POST', body: JSON.stringify({ amount, method }) }),
 
   // calendar connections
-  calendarConnections: () => request<{ connections: CalendarConnection[] }>('/calendar/connections'),
-  connectCalendar: (provider: CalendarProviderName, accountLabel: string) =>
-    request<{ connection: CalendarConnection; eventsSynced: number }>('/calendar/connections', { method: 'POST', body: JSON.stringify({ provider, accountLabel }) }),
+  calendarConnections: () =>
+    request<{ connections: Array<CalendarConnection & { live: boolean }> }>('/calendar/connections'),
+  // Begin the connect flow. Live providers return an authorizeUrl to redirect
+  // the top-level window to the provider's OAuth consent screen; demo providers
+  // (no server-side credentials) connect immediately and report events synced.
+  startCalendarConnect: (provider: CalendarProviderName) =>
+    request<
+      | { mode: 'oauth'; authorizeUrl: string }
+      | { mode: 'demo'; connected: true; eventsSynced: number }
+    >(`/calendar/oauth/${provider}/start`),
   disconnectCalendar: (provider: CalendarProviderName) =>
     request<{ ok: true }>(`/calendar/connections/${provider}`, { method: 'DELETE' }),
 

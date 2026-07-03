@@ -4,7 +4,9 @@ import path from 'node:path';
 import type { AppConfig } from './config.js';
 import type { Repository } from './db/repository.js';
 import { NotificationService, type NotificationSink, type PoolSink } from './services/notifications.js';
-import { CalendarSyncService, RecordingCalendarProvider } from './services/calendarSync.js';
+import { CalendarSyncService, type CalendarProvider } from './services/calendarSync.js';
+import { CalendarOAuthService } from './services/calendarOAuth.js';
+import type { CalendarProviderName } from './types/domain.js';
 import type { AppContext } from './routes/context.js';
 import { createRateLimiter } from './middleware/rateLimit.js';
 import { authRoutes } from './routes/auth.js';
@@ -52,14 +54,22 @@ function buildCorsOptions(origins: string[]): CorsOptions | false {
 export function buildApp(
   config: AppConfig,
   repo: Repository,
-  hooks: { onNotify?: NotificationSink; onPool?: PoolSink } = {},
+  hooks: {
+    onNotify?: NotificationSink;
+    onPool?: PoolSink;
+    /** Test hook: inject recording/mock calendar adapters per provider. */
+    calendarProviders?: Partial<Record<CalendarProviderName, CalendarProvider>>;
+  } = {},
 ): BuildAppResult {
-  const calendar = new CalendarSyncService([
-    new RecordingCalendarProvider('google'),
-    new RecordingCalendarProvider('yandex'),
-  ]);
+  const calendarOAuth = new CalendarOAuthService(config, repo);
+  const calendar = new CalendarSyncService({
+    repo,
+    config,
+    oauth: calendarOAuth,
+    providers: hooks.calendarProviders,
+  });
   const notifications = new NotificationService(repo, config, hooks.onNotify, hooks.onPool);
-  const ctx: AppContext = { config, repo, notifications, calendar, hub: { current: null } };
+  const ctx: AppContext = { config, repo, notifications, calendar, calendarOAuth, hub: { current: null } };
 
   const app = express();
   // Honour X-Forwarded-For when running behind a proxy so rate-limit keying and

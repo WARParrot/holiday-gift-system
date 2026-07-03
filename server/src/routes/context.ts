@@ -2,6 +2,7 @@ import type { AppConfig } from '../config.js';
 import type { Repository } from '../db/repository.js';
 import type { NotificationService } from '../services/notifications.js';
 import type { CalendarSyncService } from '../services/calendarSync.js';
+import type { CalendarOAuthService } from '../services/calendarOAuth.js';
 import type { ChatHub } from '../ws/chatHub.js';
 
 /**
@@ -14,5 +15,6 @@ export interface AppContext {
   repo: Repository;
   notifications: NotificationService;
   calendar: CalendarSyncService;
+  calendarOAuth: CalendarOAuthService;
   hub: { current: ChatHub | null };
 }

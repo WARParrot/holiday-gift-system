@@ -43,6 +43,24 @@ CREATE TABLE IF NOT EXISTS calendar_connections (
   PRIMARY KEY (user_id, provider)
 );
 
+-- Per-user OAuth2 tokens for live external-calendar sync. One row per
+-- (user, provider). Kept in its own table (not calendar_connections) because
+-- tokens are sensitive and refreshed independently of the display connection.
+--   account_login — the provider account login/email (Yandex CalDAV path needs it)
+--   expires_at    — epoch millis when the access token expires (0 = unknown)
+CREATE TABLE IF NOT EXISTS calendar_oauth_tokens (
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider      TEXT NOT NULL CHECK (provider IN ('google','yandex')),
+  access_token  TEXT NOT NULL,
+  refresh_token TEXT NOT NULL DEFAULT '',
+  token_type    TEXT NOT NULL DEFAULT 'Bearer',
+  scope         TEXT NOT NULL DEFAULT '',
+  account_login TEXT NOT NULL DEFAULT '',
+  expires_at    INTEGER NOT NULL DEFAULT 0,
+  updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, provider)
+);
+
 CREATE TABLE IF NOT EXISTS groups (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL,

@@ -16,6 +16,36 @@ This repository is a **monorepo** with two packages:
 > Read it first — it explains *why* every subsystem is built the way it is,
 > including the secret-chat exclusion model and the crowdfunding pseudo-bank.
 
+## What's new in 1.3 (real external-calendar sync)
+
+The Google/Yandex calendar integration is now a **real** OAuth2 + API
+integration instead of a simulated one.
+
+- **Google Calendar** — OAuth2 authorization-code flow + Calendar API v3 (raw
+  REST). Pushes an all-day `FREQ=YEARLY` birthday event with a deterministic,
+  idempotent event id.
+- **Yandex Calendar** — OAuth2 + CalDAV. Serialises each birthday to a spec-correct
+  single-VEVENT `.ics` (RFC 5545: CRLF, 75-octet folding, TEXT escaping, all-day
+  `VALUE=DATE`) and `PUT`s it to a stable login-scoped href.
+- **Per-user tokens** stored in a new `calendar_oauth_tokens` table, refreshed
+  transparently on expiry. Sync is per-user: events go only to the calendars
+  *that user* connected.
+- **Signed-state OAuth** — the `state` param is HMAC-signed (10-min expiry),
+  binding the callback to the initiating user; doubles as CSRF protection. No
+  server session needed.
+- **Zero-setup demo fallback** — a provider with no configured credentials runs
+  in the previous in-memory recording mode, so the demo and the full test suite
+  still run with no accounts. A provider goes **live** automatically once its
+  `*_CLIENT_ID`/`*_CLIENT_SECRET` are set. The UI labels demo providers clearly.
+- **Setup guide:** [`docs/CALENDAR_OAUTH_SETUP.md`](docs/CALENDAR_OAUTH_SETUP.md)
+  walks through registering the Google and Yandex apps and the env vars.
+
+> The live adapters are verified by `server/test/calendarSync.test.ts` against
+> in-process mock Google-REST and Yandex-CalDAV servers (token exchange,
+> refresh-on-expiry, idempotent upsert/delete, ICS generation). They are **not**
+> verified against the live Google/Yandex services in CI — that requires real
+> registered OAuth apps; follow the setup guide to enable and test live sync.
+
 ## What's new in 1.2 (security-hardening / review-fix pass)
 
 This release closes the findings from an external code review of the 1.1 build.

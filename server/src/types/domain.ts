@@ -57,6 +57,21 @@ export interface CalendarConnection {
   connectedAt: string;
 }
 
+/** Stored per-user OAuth2 token for a live external-calendar provider. */
+export interface CalendarOAuthToken {
+  userId: string;
+  provider: CalendarProviderName;
+  accessToken: string;
+  refreshToken: string;
+  tokenType: string;
+  scope: string;
+  /** Provider account login/email (used to build the Yandex CalDAV path). */
+  accountLogin: string;
+  /** Epoch millis when the access token expires (0 = unknown). */
+  expiresAt: number;
+  updatedAt: string;
+}
+
 /** The authenticated principal decoded from a JWT. */
 export interface AuthPrincipal {
   userId: string;

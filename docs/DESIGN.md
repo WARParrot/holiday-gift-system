@@ -443,3 +443,90 @@ nature isn't mistaken for a live integration.
 Total: **29 tests** (up from 9), plus strict typecheck and build on both
 packages, verified from a clean extract of the delivered zip.
 
+---
+
+## 15. Version 1.3 — real external-calendar sync (Google + Yandex)
+
+§8 previously described the calendar integration as a shape behind a recording
+adapter. 1.3 makes it a real OAuth2 + API integration, while keeping the
+recording adapter as an automatic fallback so the demo/tests need no accounts.
+
+### 15.1 Per-user model
+
+Real calendar sync is inherently per-user: each subscriber has their own OAuth
+tokens and their own connected calendars. `CalendarSyncService` was reworked
+from a fixed global provider list into a per-user dispatcher:
+
+- adapters are chosen per provider at construction — live when
+  `config.calendar.<provider>` is set (credentials present), else a
+  `RecordingCalendarProvider`;
+- `syncSubjects`/`removeSubjects` iterate only the **connected** providers for
+  that subscriber, resolve a valid access token (refreshing if expired), and
+  push through the matching adapter;
+- the `CalendarProvider` interface is now `upsertEvent(auth, event)` /
+  `removeEvent(auth, uid)` — auth (access token + account login) is passed per
+  call, not baked into the adapter.
+
+### 15.2 OAuth2 (`services/calendarOAuth.ts`)
+
+Authorization-code flow, raw `fetch`, no new deps:
+
+- `buildState/verifyState` — the `state` is `<userId>.<provider>.<expiry>.<nonce>.<hmac>`,
+  HMAC-signed with the app JWT secret (10-min expiry). This binds the callback
+  to the initiating user *and* is the CSRF defense, with no server session.
+- `authorizeUrl` — Google gets `access_type=offline&prompt=consent` so a refresh
+  token is returned.
+- `exchangeCode` / `refresh` / `fetchAccountLogin` — normalise the two providers'
+  token + userinfo shapes.
+- `getValidAccessToken` — returns a live token, refreshing (and persisting the
+  new access token) when it's within 60s of expiry; returns null if unusable.
+
+Tokens live in their own `calendar_oauth_tokens` table (not
+`calendar_connections`) because they're sensitive and refreshed independently;
+disconnecting a provider deletes both rows.
+
+### 15.3 Adapters
+
+- **Google** (`GoogleCalendarProvider`, Calendar API v3 REST): idempotent event
+  id derived from the event uid (base32hex to satisfy Google's id charset);
+  `PUT` to update, falling back to `POST` insert on 404/410; all-day
+  `start.date`/`end.date` with `RRULE:FREQ=YEARLY`, `transparency:transparent`.
+- **Yandex** (`YandexCalendarProvider`, CalDAV): each event is a single-VEVENT
+  `.ics` (built by `services/ics.ts` — RFC-5545 CRLF, 75-octet line folding,
+  TEXT escaping, `VALUE=DATE` all-day) `PUT` to a stable login-scoped href
+  (`{caldavBase}{path-with-login}{uid}.ics`); `DELETE` is idempotent (404 OK).
+
+### 15.4 Routes (`routes/calendar.ts`)
+
+- `GET /api/calendar/oauth/:provider/start` (authed) — live provider → returns
+  `{ mode:'oauth', authorizeUrl }` for the SPA to redirect the top window; demo
+  provider → records the connection and back-syncs immediately.
+- `GET /api/calendar/oauth/:provider/callback` — **mounted before `requireAuth`**
+  (the provider redirects the browser here with no bearer token; the signed
+  state carries identity). Verifies state, exchanges the code, stores the token,
+  records the connection, back-syncs, then 302s to
+  `/profile?calendar=..&status=..` where the SPA shows the outcome.
+- `GET /connections` now includes a `live` flag per provider; `DELETE` also
+  revokes stored tokens.
+
+### 15.5 Config & gating
+
+`config.calendar.{google,yandex}` is built from `*_CLIENT_ID/_SECRET` (+ optional
+endpoint overrides used by the tests to point at mock servers). Absent
+credentials ⇒ `null` ⇒ recording fallback. `PUBLIC_BASE_URL` derives the default
+redirect URIs. See `docs/CALENDAR_OAUTH_SETUP.md` and `server/.env.example`.
+
+### 15.6 New tests
+
+- `test/calendarSync.test.ts` — the live Google-REST and Yandex-CalDAV adapters
+  against in-process mock protocol servers: token exchange, refresh-on-expiry
+  (asserts the refreshed bearer is used), PUT-then-POST idempotent insert,
+  update-in-place (no duplicate), CalDAV VEVENT shape + login-scoped href, and
+  the recording fallback when unconfigured.
+- `test/calendarOAuthRoutes.test.ts` — the full HTTP flow through the real
+  Express app: `start` → signed authorize URL, `callback` with a forged state
+  rejected, valid `callback` exchanging the code and persisting the connection.
+
+Total: **34 tests**. Note: verified against mock protocol servers, **not**
+against live Google/Yandex (which needs real registered OAuth apps).
+
