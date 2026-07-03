@@ -79,16 +79,21 @@ function PoolWidget({
   pool: CrowdfundingPool | null;
   onPool: (p: CrowdfundingPool) => void;
 }) {
+  const { user, token, setSession } = useAuth();
   const [contributions, setContributions] = useState<PoolContribution[]>([]);
   const [amount, setAmount] = useState('10');
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [localPool, setLocalPool] = useState<CrowdfundingPool | null>(pool);
 
+  async function refresh() {
+    const r = await api.roomPool(roomId);
+    setLocalPool(r.pool);
+    setContributions(r.contributions);
+  }
+
   useEffect(() => {
-    api.roomPool(roomId).then((r) => {
-      setLocalPool(r.pool);
-      setContributions(r.contributions);
-    });
+    void refresh();
   }, [roomId]);
 
   useEffect(() => {
@@ -105,9 +110,11 @@ function PoolWidget({
   }
 
   const pct = Math.min(100, Math.round((active.currentBalance / active.targetAmount) * 100));
+  const reached = active.currentBalance >= active.targetAmount;
 
   async function contribute(e: React.FormEvent) {
     e.preventDefault();
+    setError(null);
     const value = Number(amount);
     if (!Number.isFinite(value) || value <= 0) return;
     setBusy(true);
@@ -115,8 +122,13 @@ function PoolWidget({
       const res = await api.contribute(roomId, value);
       setLocalPool(res.pool);
       onPool(res.pool);
-      const refreshed = await api.roomPool(roomId);
-      setContributions(refreshed.contributions);
+      // Keep the header/profile balance in sync after the debit.
+      if (user && token && typeof res.balance === 'number') {
+        setSession(token, { ...user, balance: res.balance });
+      }
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Contribution failed');
     } finally {
       setBusy(false);
     }
@@ -127,29 +139,47 @@ function PoolWidget({
       <div className="flex items-center justify-between text-sm">
         <span className="font-medium text-emerald-800">🎁 Gift pool</span>
         <span className="text-emerald-700">
-          ${active.currentBalance} / ${active.targetAmount} ({pct}%)
+          ${active.currentBalance.toFixed(2)} / ${active.targetAmount.toFixed(2)} ({pct}%)
         </span>
       </div>
-      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-emerald-100">
-        <div className="h-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
-      </div>
-      <form className="mt-2 flex gap-2" onSubmit={contribute}>
-        <input
-          type="number"
-          min="1"
-          className="input py-1"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
+      <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-emerald-100">
+        <div
+          className={`h-full transition-all ${reached ? 'bg-emerald-600' : 'bg-emerald-500'}`}
+          style={{ width: `${pct}%` }}
         />
-        <button className="btn-primary py-1 text-xs" disabled={busy}>
-          {busy ? '…' : 'Contribute'}
-        </button>
-      </form>
+      </div>
+      {reached && <p className="mt-1 text-[11px] font-medium text-emerald-700">🎉 Target reached!</p>}
+
+      {active.status === 'CLOSED' ? (
+        <p className="mt-2 text-xs text-slate-500">This pool is closed to new contributions.</p>
+      ) : (
+        <form className="mt-2 flex gap-2" onSubmit={contribute}>
+          <input
+            type="number"
+            min="1"
+            className="input py-1"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
+          <button className="btn-primary py-1 text-xs" disabled={busy}>
+            {busy ? '…' : 'Contribute'}
+          </button>
+        </form>
+      )}
+      {typeof user?.balance === 'number' && (
+        <p className="mt-1 text-[11px] text-emerald-700">Your balance: ${user.balance.toFixed(2)}</p>
+      )}
+      {error && <p className="mt-1 text-[11px] font-medium text-rose-600">{error}</p>}
+
       {contributions.length > 0 && (
-        <p className="mt-1 text-[11px] text-emerald-700">
-          {contributions.length} contribution{contributions.length === 1 ? '' : 's'} · latest ref{' '}
-          {contributions[contributions.length - 1].txRef}
-        </p>
+        <ul className="mt-2 space-y-0.5 border-t border-emerald-100 pt-2">
+          {contributions.slice(-4).reverse().map((c) => (
+            <li key={c.id} className="flex justify-between text-[11px] text-emerald-800">
+              <span>{c.contributorName}</span>
+              <span className="font-medium">+${c.amount.toFixed(2)}</span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

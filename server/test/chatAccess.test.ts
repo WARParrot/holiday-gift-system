@@ -16,6 +16,7 @@ function mkUser(email: string, name: string, birthdate: string): UserRow {
     birthdate,
     avatarUrl: null,
     role: 'USER',
+    balance: 0,
     createdAt: new Date().toISOString(),
   };
 }

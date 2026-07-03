@@ -20,7 +20,27 @@ CREATE TABLE IF NOT EXISTS users (
   birthdate     TEXT NOT NULL,              -- YYYY-MM-DD
   avatar_url    TEXT,
   role          TEXT NOT NULL DEFAULT 'USER' CHECK (role IN ('USER','ADMIN')),
+  balance       REAL NOT NULL DEFAULT 0,    -- account wallet balance
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS wallet_transactions (
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL CHECK (kind IN ('TOPUP','CONTRIBUTION','ADMIN_ADJUST','REFUND')),
+  amount     REAL NOT NULL,                 -- signed: + credits, - debits
+  balance_after REAL NOT NULL,
+  memo       TEXT NOT NULL DEFAULT '',
+  tx_ref     TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS calendar_connections (
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider     TEXT NOT NULL CHECK (provider IN ('google','yandex')),
+  account_label TEXT NOT NULL DEFAULT '',
+  connected_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, provider)
 );
 
 CREATE TABLE IF NOT EXISTS groups (
@@ -115,7 +135,20 @@ CREATE INDEX IF NOT EXISTS idx_subs_subscriber ON subscriptions(subscriber_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_room ON chat_messages(room_id);
 CREATE INDEX IF NOT EXISTS idx_contrib_pool ON pool_contributions(pool_id);
+CREATE INDEX IF NOT EXISTS idx_wallet_tx_user ON wallet_transactions(user_id);
 `;
+
+/**
+ * Additive migrations for databases created before a column existed. SQLite has
+ * no `ADD COLUMN IF NOT EXISTS`, so we probe the table and add when missing.
+ * Keeps older on-disk DBs working after an upgrade without a full re-seed.
+ */
+function applyMigrations(db: Db): void {
+  const userCols = (db.prepare('PRAGMA table_info(users)').all() as { name: string }[]).map((c) => c.name);
+  if (!userCols.includes('balance')) {
+    db.exec('ALTER TABLE users ADD COLUMN balance REAL NOT NULL DEFAULT 0');
+  }
+}
 
 let singleton: Db | null = null;
 
@@ -123,12 +156,9 @@ let singleton: Db | null = null;
 export function openDatabase(dbFile: string): Db {
   const db = new Database(dbFile);
   db.pragma('journal_mode = WAL');
-  // In WAL mode NORMAL is crash-safe (only an OS-level power loss can drop the
-  // last transaction) and avoids an fsync on every commit, which materially
-  // speeds up write-heavy paths like chat fan-out.
-  db.pragma('synchronous = NORMAL');
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA_SQL);
+  applyMigrations(db);
   return db;
 }
 

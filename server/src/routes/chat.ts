@@ -102,6 +102,20 @@ export function chatRoutes(ctx: AppContext): Router {
       res.status(404).json({ error: 'No open pool for this room' });
       return;
     }
+    if (pool.status !== 'OPEN') {
+      res.status(409).json({ error: 'This pool is closed to new contributions' });
+      return;
+    }
+
+    // Contributions are funded from the user's wallet balance. Debit first
+    // (atomic, rejects overdraw), then record the pool contribution.
+    const balance = repo.getBalance(requesterId);
+    if (balance < body.amount) {
+      res.status(402).json({
+        error: `Insufficient balance. Your balance is ${balance.toFixed(2)}; top up on the Payment page.`,
+      });
+      return;
+    }
 
     const charge = processMockCharge({
       userId: requesterId,
@@ -111,6 +125,19 @@ export function chatRoutes(ctx: AppContext): Router {
     });
     if (!charge.ok) {
       res.status(402).json({ error: charge.error ?? 'Payment failed' });
+      return;
+    }
+
+    const debit = repo.applyWalletTransaction({
+      id: randomUUID(),
+      userId: requesterId,
+      kind: 'CONTRIBUTION',
+      amount: -charge.processedAmount,
+      memo: `Gift pool for ${pool.subjectName}`,
+      txRef: charge.txRef,
+    });
+    if (!debit) {
+      res.status(402).json({ error: 'Insufficient balance' });
       return;
     }
 
@@ -130,11 +157,11 @@ export function chatRoutes(ctx: AppContext): Router {
       requesterId,
       'SYSTEM',
       'Contribution received',
-      `Your contribution of ${charge.processedAmount} to ${pool.subjectName}'s gift pool was recorded (${charge.txRef}).`,
+      `Your contribution of ${charge.processedAmount} to ${pool.subjectName}'s gift pool was recorded (${charge.txRef}). New balance: ${debit.balanceAfter.toFixed(2)}.`,
       { poolId: pool.id, txRef: charge.txRef },
     );
 
-    res.status(201).json({ pool: updated, txRef: charge.txRef });
+    res.status(201).json({ pool: updated, txRef: charge.txRef, balance: debit.balanceAfter });
   });
 
   return router;

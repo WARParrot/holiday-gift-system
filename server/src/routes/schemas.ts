@@ -55,6 +55,41 @@ export const contributeSchema = z.object({
   amount: z.number().positive(),
 });
 
+export const topUpSchema = z.object({
+  amount: z.number().positive().max(100000),
+  /** Non-sensitive display label only, e.g. "Visa •• 4242". Never a real PAN. */
+  method: z.string().min(1).max(60).default('Mock card'),
+});
+
+export const calendarConnectSchema = z.object({
+  provider: z.enum(['google', 'yandex']),
+  accountLabel: z.string().min(1).max(120),
+});
+
+export const adminGroupUpsertSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().default(''),
+  visibility: z.enum(['PUBLIC', 'INVITE']).default('PUBLIC'),
+  ownerId: z.string().min(1).optional(),
+});
+
+export const adminGroupMemberSchema = z.object({
+  userId: z.string().min(1),
+});
+
+export const adminBalanceSchema = z.object({
+  /** Signed delta to apply, or set an absolute value when `mode` is 'set'. */
+  amount: z.number(),
+  mode: z.enum(['adjust', 'set']).default('adjust'),
+  memo: z.string().max(200).default(''),
+});
+
+export const adminPoolFinanceSchema = z.object({
+  targetAmount: z.number().nonnegative(),
+  currentBalance: z.number().nonnegative(),
+  status: z.enum(['OPEN', 'CLOSED']),
+});
+
 export const adminUserUpsertSchema = z.object({
   email: z.string().email(),
   fullName: z.string().min(1),

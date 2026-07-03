@@ -1,19 +1,20 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../store/auth';
 import { NotificationBell } from './NotificationBell';
 import { Avatar } from './Avatar';
+import { ProfileWidget } from './ProfileWidget';
 
 const navItems = [
   { to: '/directory', label: 'Directory' },
   { to: '/groups', label: 'Groups' },
   { to: '/subscriptions', label: 'Subscriptions' },
   { to: '/wishlist', label: 'My Wishlist' },
-  { to: '/profile', label: 'Profile' },
 ];
 
 export function Layout() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [profileOpen, setProfileOpen] = useState(false);
 
   return (
     <div className="min-h-screen">
@@ -48,18 +49,17 @@ export function Layout() {
           <div className="ml-auto flex items-center gap-3">
             <NotificationBell />
             {user && (
-              <div className="flex items-center gap-2">
+              <button
+                className="flex items-center gap-2 rounded-full border border-slate-200 py-1 pl-1 pr-3 hover:bg-slate-50"
+                onClick={() => setProfileOpen(true)}
+                aria-label="Open profile"
+                title="Profile, payment & calendar"
+              >
                 <Avatar name={user.fullName} url={user.avatarUrl} size={32} />
-                <button
-                  className="btn-ghost text-xs"
-                  onClick={() => {
-                    logout();
-                    navigate('/login');
-                  }}
-                >
-                  Log out
-                </button>
-              </div>
+                <span className="hidden text-xs font-semibold text-emerald-700 sm:inline">
+                  ${user.balance.toFixed(2)}
+                </span>
+              </button>
             )}
           </div>
         </div>
@@ -76,11 +76,22 @@ export function Layout() {
               {item.label}
             </NavLink>
           ))}
+          {user?.role === 'ADMIN' && (
+            <NavLink
+              to="/admin"
+              className={({ isActive }) =>
+                `whitespace-nowrap rounded-lg px-3 py-1 text-xs font-medium ${isActive ? 'bg-brand-100 text-brand-700' : 'text-slate-600'}`
+              }
+            >
+              Admin
+            </NavLink>
+          )}
         </nav>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-6">
         <Outlet />
       </main>
+      {profileOpen && <ProfileWidget onClose={() => setProfileOpen(false)} />}
     </div>
   );
 }

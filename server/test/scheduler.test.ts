@@ -18,14 +18,14 @@ function daysFromNowBirthdate(days: number): string {
 function mkUser(email: string, name: string, birthdate: string): UserRow {
   return {
     id: randomUUID(), email, passwordHash: hashPassword('password'),
-    fullName: name, birthdate, avatarUrl: null, role: 'USER', createdAt: new Date().toISOString(),
+    fullName: name, birthdate, avatarUrl: null, role: 'USER', balance: 0, createdAt: new Date().toISOString(),
   };
 }
 
 const schedConfig: AppConfig = {
   host: '127.0.0.1', port: 0, jwtSecret: 'test', jwtTtl: 3600, dbFile: ':memory:',
   reminderOffsets: [7, 3, 1], poolLeadDays: 7, poolDefaultTarget: 100,
-  enableScheduler: false, schedulerIntervalMs: 1000,
+  enableScheduler: false, schedulerIntervalMs: 1000, webDist: null,
 };
 
 test('scheduler emits a reminder to subscribers and is idempotent across ticks', () => {

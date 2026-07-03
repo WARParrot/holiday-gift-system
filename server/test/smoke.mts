@@ -17,8 +17,8 @@ const repo = new Repository(db);
 // Seed: subject + planner + subscription
 const subjectId = randomUUID();
 const plannerId = randomUUID();
-repo.createUser({ id: subjectId, email: 's@x.com', passwordHash: hashPassword('password'), fullName: 'Subject', birthdate: '1990-01-01', avatarUrl: null, role: 'USER', createdAt: '' });
-repo.createUser({ id: plannerId, email: 'p@x.com', passwordHash: hashPassword('password'), fullName: 'Planner', birthdate: '1991-02-02', avatarUrl: null, role: 'USER', createdAt: '' });
+repo.createUser({ id: subjectId, email: 's@x.com', passwordHash: hashPassword('password'), fullName: 'Subject', birthdate: '1990-01-01', avatarUrl: null, role: 'USER', balance: 0, createdAt: '' });
+repo.createUser({ id: plannerId, email: 'p@x.com', passwordHash: hashPassword('password'), fullName: 'Planner', birthdate: '1991-02-02', avatarUrl: null, role: 'USER', balance: 0, createdAt: '' });
 
 const { app, ctx } = buildApp(config, repo);
 const server = createServer(app);
@@ -74,12 +74,25 @@ subjWs.send(JSON.stringify({ type: 'join', roomId }));
 await new Promise((r) => setTimeout(r, 150));
 check('subject WS join is denied', subjFrames.some((f) => f.type === 'error'));
 
-// 5. Crowdfunding via mock bank
+// 5. Payment: top up the planner's wallet, then crowdfund from balance
+const topup = await fetch(`${base}/api/payments/topup`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${plannerToken}` }, body: JSON.stringify({ amount: 100, method: 'Mock card' }) });
+const topupBody = await topup.json();
+check('wallet top-up credits balance', topup.status === 201 && topupBody.balance === 100);
+
+// Contributing more than balance is rejected (402)
 const poolId = randomUUID();
 repo.createPool({ id: poolId, subjectId, subjectName: 'Subject', roomId, targetAmount: 100, currentBalance: 0, status: 'OPEN', openedAt: '', cycleKey: `${subjectId}:2099` });
+const overdraw = await fetch(`${base}/api/chat/rooms/${roomId}/pool/contribute`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${plannerToken}` }, body: JSON.stringify({ amount: 500 }) });
+check('over-balance contribution is refused', overdraw.status === 402);
+
 const contrib = await fetch(`${base}/api/chat/rooms/${roomId}/pool/contribute`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${plannerToken}` }, body: JSON.stringify({ amount: 40 }) });
 const contribBody = await contrib.json();
-check('contribution succeeds via mock bank', contrib.status === 201 && contribBody.pool.currentBalance === 40 && /^MOCK-/.test(contribBody.txRef));
+check('contribution succeeds and debits balance', contrib.status === 201 && contribBody.pool.currentBalance === 40 && contribBody.balance === 60 && /^MOCK-/.test(contribBody.txRef));
+
+// 6. Calendar connect persists + reports back-synced events
+const cal = await fetch(`${base}/api/calendar/connections`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${plannerToken}` }, body: JSON.stringify({ provider: 'google', accountLabel: 'planner@gmail.com' }) });
+const calBody = await cal.json();
+check('calendar provider connects', cal.status === 201 && calBody.connection.provider === 'google');
 
 ws.close(); subjWs.close();
 server.close();

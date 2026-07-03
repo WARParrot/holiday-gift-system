@@ -1,5 +1,7 @@
 import type { Database } from 'better-sqlite3';
 import type {
+  CalendarConnection,
+  CalendarProviderName,
   ChatMessage,
   ChatRoom,
   CrowdfundingPool,
@@ -13,6 +15,8 @@ import type {
   Subscription,
   SubscriptionKind,
   UserRow,
+  WalletTransaction,
+  WalletTxKind,
   WishlistItem,
   WishlistStatus,
 } from '../types/domain.js';
@@ -29,10 +33,10 @@ export class Repository {
   createUser(row: UserRow): void {
     this.db
       .prepare(
-        `INSERT INTO users (id, email, password_hash, full_name, birthdate, avatar_url, role, created_at)
-         VALUES (@id, @email, @passwordHash, @fullName, @birthdate, @avatarUrl, @role, datetime('now'))`,
+        `INSERT INTO users (id, email, password_hash, full_name, birthdate, avatar_url, role, balance, created_at)
+         VALUES (@id, @email, @passwordHash, @fullName, @birthdate, @avatarUrl, @role, @balance, datetime('now'))`,
       )
-      .run(row);
+      .run({ ...row, balance: row.balance ?? 0 });
   }
 
   findUserByEmail(email: string): UserRow | undefined {
@@ -64,6 +68,93 @@ export class Repository {
     this.db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
   }
 
+  // ---- wallet / payments -------------------------------------------------
+  getBalance(userId: string): number {
+    const r = this.db.prepare('SELECT balance FROM users WHERE id = ?').get(userId) as { balance: number } | undefined;
+    return r?.balance ?? 0;
+  }
+
+  /**
+   * Apply a signed balance change and record a wallet transaction atomically.
+   * Debits (negative amount) are rejected if they would overdraw, unless
+   * `allowNegative` is set (admin adjustments may push a balance negative).
+   * Returns the resulting transaction, or null if the debit was refused.
+   */
+  applyWalletTransaction(input: {
+    id: string;
+    userId: string;
+    kind: WalletTxKind;
+    amount: number;
+    memo?: string;
+    txRef: string;
+    allowNegative?: boolean;
+  }): WalletTransaction | null {
+    const tx = this.db.transaction((): WalletTransaction | null => {
+      const current = this.getBalance(input.userId);
+      const next = Math.round((current + input.amount) * 100) / 100;
+      if (next < 0 && !input.allowNegative) return null;
+      this.db.prepare('UPDATE users SET balance = ? WHERE id = ?').run(next, input.userId);
+      this.db
+        .prepare(
+          `INSERT INTO wallet_transactions (id, user_id, kind, amount, balance_after, memo, tx_ref, created_at)
+           VALUES (@id, @userId, @kind, @amount, @balanceAfter, @memo, @txRef, datetime('now'))`,
+        )
+        .run({
+          id: input.id,
+          userId: input.userId,
+          kind: input.kind,
+          amount: input.amount,
+          balanceAfter: next,
+          memo: input.memo ?? '',
+          txRef: input.txRef,
+        });
+      return this.getWalletTransaction(input.id)!;
+    });
+    return tx();
+  }
+
+  getWalletTransaction(id: string): WalletTransaction | undefined {
+    const r = this.db.prepare('SELECT * FROM wallet_transactions WHERE id = ?').get(id) as
+      | Record<string, unknown>
+      | undefined;
+    return r ? this.mapWalletTx(r) : undefined;
+  }
+
+  listWalletTransactions(userId: string, limit = 50): WalletTransaction[] {
+    const rows = this.db
+      .prepare('SELECT * FROM wallet_transactions WHERE user_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?')
+      .all(userId, limit) as Record<string, unknown>[];
+    return rows.map((r) => this.mapWalletTx(r));
+  }
+
+  // ---- calendar connections ---------------------------------------------
+  listCalendarConnections(userId: string): CalendarConnection[] {
+    const rows = this.db
+      .prepare('SELECT * FROM calendar_connections WHERE user_id = ? ORDER BY provider')
+      .all(userId) as Record<string, unknown>[];
+    return rows.map((r) => this.mapCalendarConnection(r));
+  }
+
+  connectCalendar(userId: string, provider: CalendarProviderName, accountLabel: string): CalendarConnection {
+    this.db
+      .prepare(
+        `INSERT INTO calendar_connections (user_id, provider, account_label, connected_at)
+         VALUES (?, ?, ?, datetime('now'))
+         ON CONFLICT(user_id, provider) DO UPDATE SET account_label = excluded.account_label,
+           connected_at = excluded.connected_at`,
+      )
+      .run(userId, provider, accountLabel);
+    return this.mapCalendarConnection(
+      this.db
+        .prepare('SELECT * FROM calendar_connections WHERE user_id = ? AND provider = ?')
+        .get(userId, provider) as Record<string, unknown>,
+    );
+  }
+
+  disconnectCalendar(userId: string, provider: CalendarProviderName): void {
+    this.db.prepare('DELETE FROM calendar_connections WHERE user_id = ? AND provider = ?').run(userId, provider);
+  }
+
   // ---- groups ------------------------------------------------------------
   createGroup(g: Group): void {
     this.db
@@ -72,6 +163,18 @@ export class Repository {
          VALUES (@id, @name, @description, @visibility, @ownerId, datetime('now'))`,
       )
       .run(g);
+  }
+
+  updateGroup(id: string, fields: { name: string; description: string; visibility: Group['visibility']; ownerId?: string }): void {
+    if (fields.ownerId) {
+      this.db
+        .prepare('UPDATE groups SET name = ?, description = ?, visibility = ?, owner_id = ? WHERE id = ?')
+        .run(fields.name, fields.description, fields.visibility, fields.ownerId, id);
+    } else {
+      this.db
+        .prepare('UPDATE groups SET name = ?, description = ?, visibility = ? WHERE id = ?')
+        .run(fields.name, fields.description, fields.visibility, id);
+    }
   }
 
   addMember(groupId: string, userId: string): void {
@@ -399,6 +502,28 @@ export class Repository {
     return r ? this.mapPool(r) : undefined;
   }
 
+  /** Admin: every pool (any status) with its subject name, newest first. */
+  listAllPools(): CrowdfundingPool[] {
+    const rows = this.db
+      .prepare(
+        `SELECT p.*, u.full_name AS subject_name FROM crowdfunding_pools p
+         JOIN users u ON u.id = p.subject_id ORDER BY p.opened_at DESC`,
+      )
+      .all() as Record<string, unknown>[];
+    return rows.map((r) => this.mapPool(r));
+  }
+
+  /** Admin: directly set a pool's monetary fields / status. */
+  updatePoolFinance(
+    poolId: string,
+    fields: { targetAmount: number; currentBalance: number; status: CrowdfundingPool['status'] },
+  ): CrowdfundingPool | undefined {
+    this.db
+      .prepare('UPDATE crowdfunding_pools SET target_amount = ?, current_balance = ?, status = ? WHERE id = ?')
+      .run(fields.targetAmount, fields.currentBalance, fields.status, poolId);
+    return this.getPoolById(poolId);
+  }
+
   addContribution(c: PoolContribution): CrowdfundingPool {
     const tx = this.db.transaction((contribution: PoolContribution) => {
       this.db
@@ -460,6 +585,7 @@ export class Repository {
       birthdate: row.birthdate as string,
       avatarUrl: (row.avatar_url as string) ?? null,
       role: row.role as Role,
+      balance: (row.balance as number) ?? 0,
       createdAt: row.created_at as string,
     };
   }
@@ -556,6 +682,28 @@ export class Repository {
       amount: r.amount as number,
       txRef: r.tx_ref as string,
       createdAt: r.created_at as string,
+    };
+  }
+
+  private mapWalletTx(r: Record<string, unknown>): WalletTransaction {
+    return {
+      id: r.id as string,
+      userId: r.user_id as string,
+      kind: r.kind as WalletTxKind,
+      amount: r.amount as number,
+      balanceAfter: r.balance_after as number,
+      memo: r.memo as string,
+      txRef: r.tx_ref as string,
+      createdAt: r.created_at as string,
+    };
+  }
+
+  private mapCalendarConnection(r: Record<string, unknown>): CalendarConnection {
+    return {
+      userId: r.user_id as string,
+      provider: r.provider as CalendarProviderName,
+      accountLabel: (r.account_label as string) ?? '',
+      connectedAt: r.connected_at as string,
     };
   }
 }

@@ -13,6 +13,8 @@ import { wishlistRoutes } from './routes/wishlist.js';
 import { subscriptionRoutes } from './routes/subscriptions.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { chatRoutes } from './routes/chat.js';
+import { paymentRoutes } from './routes/payments.js';
+import { calendarRoutes } from './routes/calendar.js';
 import { adminRoutes } from './routes/admin.js';
 
 export interface BuildAppResult {
@@ -49,6 +51,8 @@ export function buildApp(
   app.use('/api/subscriptions', subscriptionRoutes(ctx));
   app.use('/api/notifications', notificationRoutes(ctx));
   app.use('/api/chat', chatRoutes(ctx));
+  app.use('/api/payments', paymentRoutes(ctx));
+  app.use('/api/calendar', calendarRoutes(ctx));
   app.use('/api/admin', adminRoutes(ctx));
 
   // Optional: serve the built SPA as a single process (production convenience).

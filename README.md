@@ -16,6 +16,24 @@ This repository is a **monorepo** with two packages:
 > Read it first — it explains *why* every subsystem is built the way it is,
 > including the secret-chat exclusion model and the crowdfunding pseudo-bank.
 
+## What's new in 1.1 (production-hardening pass)
+
+- **Clickable avatar → profile widget** — the header avatar opens a slide-over
+  with three subpages: **Account** (name/birthdate/avatar), **Payment**
+  (wallet balance, top-up via the mock bank, transaction ledger), and
+  **Calendar** (connect/disconnect Google & Yandex).
+- **Explicit account balance** — every user has a wallet balance, shown in the
+  header chip and the profile widget. Crowdfunding contributions now **debit
+  the wallet** (with an insufficient-funds guard), so money flows end-to-end:
+  top up → balance → contribute.
+- **Functioning crowdfunding display** — the seed DB now ships an **active gift
+  pool** (Carol's birthday) pre-funded with contributions, and the pool widget
+  shows progress, contributor list, target-reached state, and live updates.
+- **Admin money management** — admins can adjust/set any user's balance and
+  edit any gift pool's target/balance/status.
+- **Full admin group management** — create, rename, re-scope, delete groups and
+  add/remove members, all from the Admin → Groups tab.
+
 ---
 
 ## Quick start

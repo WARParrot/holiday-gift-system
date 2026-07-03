@@ -11,7 +11,30 @@ export interface PublicUser {
   birthdate: string;
   avatarUrl: string | null;
   role: Role;
+  balance: number;
   createdAt: string;
+}
+
+export type WalletTxKind = 'TOPUP' | 'CONTRIBUTION' | 'ADMIN_ADJUST' | 'REFUND';
+
+export interface WalletTransaction {
+  id: string;
+  userId: string;
+  kind: WalletTxKind;
+  amount: number;
+  balanceAfter: number;
+  memo: string;
+  txRef: string;
+  createdAt: string;
+}
+
+export type CalendarProviderName = 'google' | 'yandex';
+
+export interface CalendarConnection {
+  userId: string;
+  provider: CalendarProviderName;
+  accountLabel: string;
+  connectedAt: string;
 }
 
 export interface DirectoryUser extends PublicUser {
@@ -31,6 +54,10 @@ export interface Group {
 export interface GroupWithMeta extends Group {
   memberCount: number;
   isMember: boolean;
+}
+
+export interface GroupWithMembers extends Group {
+  members: GroupMemberView[];
 }
 
 export interface GroupMemberView {

@@ -17,6 +17,8 @@ export interface UserRow {
   birthdate: string;
   avatarUrl: string | null;
   role: Role;
+  /** Account wallet balance. */
+  balance: number;
   createdAt: string;
 }
 
@@ -28,7 +30,31 @@ export interface PublicUser {
   birthdate: string;
   avatarUrl: string | null;
   role: Role;
+  balance: number;
   createdAt: string;
+}
+
+export type WalletTxKind = 'TOPUP' | 'CONTRIBUTION' | 'ADMIN_ADJUST' | 'REFUND';
+
+export interface WalletTransaction {
+  id: string;
+  userId: string;
+  kind: WalletTxKind;
+  /** Signed amount: positive credits, negative debits. */
+  amount: number;
+  balanceAfter: number;
+  memo: string;
+  txRef: string;
+  createdAt: string;
+}
+
+export type CalendarProviderName = 'google' | 'yandex';
+
+export interface CalendarConnection {
+  userId: string;
+  provider: CalendarProviderName;
+  accountLabel: string;
+  connectedAt: string;
 }
 
 /** The authenticated principal decoded from a JWT. */

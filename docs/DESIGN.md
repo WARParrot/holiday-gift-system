@@ -266,3 +266,64 @@ web/src/
   pages/                 Login, Directory, Groups, GroupDetail, FriendCard,
                          Subscriptions, Wishlist, Profile, Admin
 ```
+
+---
+
+## 13. Version 1.1 — wallet, payments, calendar UI, admin money & groups
+
+This release closes the production gaps identified after the first delivery.
+
+### 13.1 Wallet / balance model
+
+- `users.balance` (REAL) holds each account's funds; `wallet_transactions` is a
+  signed, append-only ledger (`TOPUP` / `CONTRIBUTION` / `ADMIN_ADJUST` /
+  `REFUND`) recording `amount`, `balance_after`, `memo`, and `tx_ref`.
+- `Repository.applyWalletTransaction` performs the balance mutation **and** the
+  ledger insert inside one SQLite transaction. It **rejects overdrawing debits**
+  (returns `null`) unless `allowNegative` is set — used only for admin
+  adjustments. This is the single choke-point for every balance change.
+- **Money now flows end-to-end:** `POST /api/payments/topup` credits the wallet
+  through the same `processMockCharge` pseudo-bank; crowdfunding contributions
+  (`/chat/rooms/:id/pool/contribute`) first check balance, then debit the wallet
+  and credit the pool. A contribution that exceeds balance returns `402`.
+
+### 13.2 Payment & calendar surfaces (profile widget)
+
+- The header avatar is a button opening `components/ProfileWidget.tsx`, a
+  slide-over with **Account**, **Payment**, and **Calendar** subpages. Balance
+  is shown in the header chip and the widget; both stay in sync via the Zustand
+  auth store after any top-up/contribution.
+- `calendar_connections` (PK `user_id + provider`) persists Google/Yandex
+  links. `POST /api/calendar/connections` records the link and **back-syncs**
+  the user's calendar-enabled subscriptions into the provider through the
+  existing `CalendarSyncService` (still the recording adapter — §8 unchanged).
+
+### 13.3 Admin money & full group management
+
+- **Money:** `PATCH /api/admin/users/:id/balance` (adjust or set, audited via
+  `ADMIN_ADJUST` ledger rows), `GET /api/admin/users/:id/wallet`,
+  `GET /api/admin/pools`, and `PUT /api/admin/pools/:id` (edit
+  target/balance/status; pushes a live `pool` frame to the room).
+- **Groups:** create / update (name, description, visibility, owner) / delete,
+  plus `POST` and `DELETE` member endpoints — surfaced in the Admin → Groups
+  tab with an inline member editor.
+
+### 13.4 Seed data
+
+`migrate.ts` now assigns starting balances and creates an **active gift pool for
+Carol** (target 150) pre-funded by Alice (50) and Bob (30), with matching wallet
+debits — so the crowdfunding display and ledgers are populated on first run.
+
+### 13.5 Schema migration safety
+
+`applyMigrations()` in `schema.ts` adds the `balance` column to `users` on
+pre-existing databases (SQLite lacks `ADD COLUMN IF NOT EXISTS`), so upgrading an
+old on-disk DB doesn't require a re-seed.
+
+### 13.6 New tests
+
+`test/wallet.test.ts` covers credit/debit ledger movement, overdraw refusal,
+admin negative adjust, calendar connect/disconnect upsert, and admin pool
+finance updates. `test/smoke.mts` gained live checks for top-up, over-balance
+refusal, balance-debiting contribution, and calendar connect.
+

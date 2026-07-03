@@ -1,16 +1,20 @@
 import type {
   AppNotification,
+  CalendarConnection,
+  CalendarProviderName,
   ChatMessage,
   CrowdfundingPool,
   DirectoryUser,
   FriendCard,
   Group,
   GroupMemberView,
+  GroupWithMembers,
   GroupWithMeta,
   PoolContribution,
   PublicUser,
   Subscription,
   SubscriptionKind,
+  WalletTransaction,
   WishlistItem,
   WishlistStatus,
 } from '../types/domain';
@@ -106,7 +110,7 @@ export const api = {
   roomPool: (roomId: string) =>
     request<{ pool: CrowdfundingPool | null; contributions: PoolContribution[] }>(`/chat/rooms/${roomId}/pool`),
   contribute: (roomId: string, amount: number) =>
-    request<{ pool: CrowdfundingPool; txRef: string }>(`/chat/rooms/${roomId}/pool/contribute`, { method: 'POST', body: JSON.stringify({ amount }) }),
+    request<{ pool: CrowdfundingPool; txRef: string; balance: number }>(`/chat/rooms/${roomId}/pool/contribute`, { method: 'POST', body: JSON.stringify({ amount }) }),
 
   // admin
   adminUsers: () => request<{ users: PublicUser[] }>('/admin/users'),
@@ -114,6 +118,40 @@ export const api = {
   adminExport: (format: 'json' | 'csv') => request<unknown>(`/admin/export?format=${format}`),
   adminImport: (format: 'json' | 'csv', payload: string) =>
     request<{ created: number; skipped: number; total: number }>('/admin/import', { method: 'POST', body: JSON.stringify({ format, payload }) }),
+
+  // payments / wallet
+  wallet: () => request<{ balance: number; transactions: WalletTransaction[] }>('/payments/wallet'),
+  topUp: (amount: number, method: string) =>
+    request<{ balance: number; transaction: WalletTransaction }>('/payments/topup', { method: 'POST', body: JSON.stringify({ amount, method }) }),
+
+  // calendar connections
+  calendarConnections: () => request<{ connections: CalendarConnection[] }>('/calendar/connections'),
+  connectCalendar: (provider: CalendarProviderName, accountLabel: string) =>
+    request<{ connection: CalendarConnection; eventsSynced: number }>('/calendar/connections', { method: 'POST', body: JSON.stringify({ provider, accountLabel }) }),
+  disconnectCalendar: (provider: CalendarProviderName) =>
+    request<{ ok: true }>(`/calendar/connections/${provider}`, { method: 'DELETE' }),
+
+  // admin — money
+  adminUserWallet: (id: string) =>
+    request<{ balance: number; transactions: WalletTransaction[] }>(`/admin/users/${id}/wallet`),
+  adminSetBalance: (id: string, amount: number, mode: 'adjust' | 'set', memo: string) =>
+    request<{ user: PublicUser; transaction: WalletTransaction }>(`/admin/users/${id}/balance`, { method: 'PATCH', body: JSON.stringify({ amount, mode, memo }) }),
+  adminPools: () =>
+    request<{ pools: Array<CrowdfundingPool & { contributions: number }> }>('/admin/pools'),
+  adminUpdatePool: (id: string, targetAmount: number, currentBalance: number, status: 'OPEN' | 'CLOSED') =>
+    request<{ pool: CrowdfundingPool }>(`/admin/pools/${id}`, { method: 'PUT', body: JSON.stringify({ targetAmount, currentBalance, status }) }),
+
+  // admin — full group management
+  adminGroups: () => request<{ groups: GroupWithMembers[] }>('/admin/groups'),
+  adminCreateGroup: (body: { name: string; description: string; visibility: 'PUBLIC' | 'INVITE'; ownerId?: string }) =>
+    request<{ group: Group }>('/admin/groups', { method: 'POST', body: JSON.stringify(body) }),
+  adminUpdateGroup: (id: string, body: { name: string; description: string; visibility: 'PUBLIC' | 'INVITE'; ownerId?: string }) =>
+    request<{ group: Group; members: GroupMemberView[] }>(`/admin/groups/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  adminDeleteGroup: (id: string) => request<{ ok: true }>(`/admin/groups/${id}`, { method: 'DELETE' }),
+  adminAddGroupMember: (groupId: string, userId: string) =>
+    request<{ members: GroupMemberView[] }>(`/admin/groups/${groupId}/members`, { method: 'POST', body: JSON.stringify({ userId }) }),
+  adminRemoveGroupMember: (groupId: string, userId: string) =>
+    request<{ members: GroupMemberView[] }>(`/admin/groups/${groupId}/members/${userId}`, { method: 'DELETE' }),
 };
 
 export interface ChatRoomLite {
