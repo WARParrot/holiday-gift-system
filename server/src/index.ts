@@ -29,11 +29,10 @@ const repo = new Repository(db);
 // Wire live push: notifications and pool updates flow to connected sockets.
 const { app, ctx } = buildApp(config, repo, {
   onNotify: (userId, notification) => {
-    // The hub could target a user's sockets directly; we keep the REST feed
-    // authoritative and let the client poll/refresh the panel. Hook retained
-    // for future per-user socket fan-out.
-    void userId;
-    void notification;
+    // Push the new/updated notification to the user's connected sockets so the
+    // bell updates live. The REST feed stays authoritative; the client can
+    // refresh on receipt (the poll remains as a fallback if no socket is open).
+    ctx.hub.current?.publishNotification(userId, notification);
   },
   onPool: (pool) => ctx.hub.current?.publishPool(pool),
 });

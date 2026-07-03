@@ -166,4 +166,6 @@ export type WsServerFrame =
   | { type: 'joined'; roomId: string; messages: ChatMessage[] }
   | { type: 'message'; message: ChatMessage }
   | { type: 'pool'; pool: CrowdfundingPool }
+  | { type: 'notification'; notification: Notification }
+  | { type: 'notification-removed'; id: string }
   | { type: 'error'; error: string };

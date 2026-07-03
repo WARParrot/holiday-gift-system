@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNotifications } from '../store/notifications';
+import { useNotificationSocket } from '../hooks/useNotificationSocket';
 import { formatDateTime } from './format';
 
 const TYPE_STYLES: Record<string, string> = {
@@ -12,6 +13,9 @@ const TYPE_STYLES: Record<string, string> = {
 export function NotificationBell() {
   const { items, unread, refresh, markRead, markAllRead } = useNotifications();
   const [open, setOpen] = useState(false);
+
+  // Live push over WS keeps the bell current; the poll is a periodic fallback.
+  useNotificationSocket();
 
   useEffect(() => {
     refresh();

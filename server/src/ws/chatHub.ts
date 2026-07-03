@@ -6,7 +6,7 @@ import type { Repository } from '../db/repository.js';
 import type { NotificationService } from '../services/notifications.js';
 import { canAccessRoom } from '../services/chatAccess.js';
 import { verifyToken } from '../util/auth.js';
-import type { ChatMessage, CrowdfundingPool, WsClientFrame, WsServerFrame } from '../types/domain.js';
+import type { ChatMessage, CrowdfundingPool, Notification, WsClientFrame, WsServerFrame } from '../types/domain.js';
 
 /**
  * Real-time hub for the Secret Coordination Chat.
@@ -103,6 +103,9 @@ export class ChatHub {
         body,
       });
       this.broadcastToRoom(frame.roomId, { type: 'message', message: saved });
+      // Posting a message means the author has clearly seen this room, so drop
+      // any chat-counter notification they'd accumulated for it (req 2).
+      this.clearChatNotification(client.userId, frame.roomId);
       this.notifyOtherParticipants(saved);
       return;
     }
@@ -122,6 +125,37 @@ export class ChatHub {
     this.broadcastToRoom(pool.roomId, { type: 'pool', pool });
   }
 
+  /** Send a frame to every authenticated socket belonging to a single user. */
+  private sendToUser(userId: string, frame: WsServerFrame): void {
+    for (const client of this.clients) {
+      if (client.userId === userId) this.send(client.socket, frame);
+    }
+  }
+
+  /**
+   * Deliver a fresh/updated notification to a user's connected clients so the
+   * notification bell updates live. Wired to `NotificationService`'s onNotify
+   * sink in index.ts. Clients need only an authenticated socket (no room join).
+   */
+  publishNotification(userId: string, notification: Notification): void {
+    this.sendToUser(userId, { type: 'notification', notification });
+  }
+
+  /** User ids that currently have this room open (an active joined socket). */
+  private usersInRoom(roomId: string): Set<string> {
+    const present = new Set<string>();
+    for (const client of this.clients) {
+      if (client.userId && client.rooms.has(roomId)) present.add(client.userId);
+    }
+    return present;
+  }
+
+  /** Remove a user's chat-counter notification for a room and tell their clients. */
+  private clearChatNotification(userId: string, roomId: string): void {
+    const removedId = this.repo.deleteNotificationByDedupe(userId, `chat:${roomId}`);
+    if (removedId) this.sendToUser(userId, { type: 'notification-removed', id: removedId });
+  }
+
   private notifyOtherParticipants(message: ChatMessage): void {
     // The message itself is already persisted and broadcast to the room by the
     // time we get here, so the notification fan-out is deferred off the send
@@ -135,19 +169,17 @@ export class ChatHub {
       try {
         const room = this.repo.getRoomById(message.roomId);
         if (!room) return;
+        // Only subscribers are notified (req 3 — subscriberIdsForSubject already
+        // excludes non-subscribers and the subject). We further skip the author
+        // and anyone currently viewing the room (req 1).
+        const present = this.usersInRoom(message.roomId);
         const recipients = this.repo
           .subscriberIdsForSubject(room.subjectId)
-          .filter((userId) => userId !== message.authorId);
+          .filter((userId) => userId !== message.authorId && !present.has(userId));
         if (recipients.length === 0) return;
         this.repo.transaction(() => {
           for (const userId of recipients) {
-            this.notifications.push(
-              userId,
-              'CHAT_MESSAGE',
-              `New message in ${room.subjectName}'s celebration chat`,
-              `${message.authorName}: ${message.body.slice(0, 80)}`,
-              { roomId: room.id, messageId: message.id },
-            );
+            this.notifications.pushChatMessage(userId, room, message);
           }
         });
       } catch (err) {

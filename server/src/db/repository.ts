@@ -267,6 +267,41 @@ export class Repository {
     this.db.prepare('UPDATE notifications SET read = 1 WHERE user_id = ?').run(userId);
   }
 
+  /** Look up a single notification by its (user, dedupe_key) pair, or undefined. */
+  findNotificationByDedupe(userId: string, dedupeKey: string): Notification | undefined {
+    const r = this.db
+      .prepare('SELECT * FROM notifications WHERE user_id = ? AND dedupe_key = ?')
+      .get(userId, dedupeKey) as Record<string, unknown> | undefined;
+    return r ? this.mapNotification(r) : undefined;
+  }
+
+  /**
+   * Delete the notification identified by (user, dedupe_key), if any. Returns
+   * the removed id so callers can push a live "removed" frame. Used to clear a
+   * user's own chat-counter notification once they post in that room.
+   */
+  deleteNotificationByDedupe(userId: string, dedupeKey: string): string | undefined {
+    const row = this.db
+      .prepare('SELECT id FROM notifications WHERE user_id = ? AND dedupe_key = ?')
+      .get(userId, dedupeKey) as { id: string } | undefined;
+    if (!row) return undefined;
+    this.db.prepare('DELETE FROM notifications WHERE id = ?').run(row.id);
+    return row.id;
+  }
+
+  /**
+   * Refresh an existing notification in place: overwrite its title/body/data,
+   * re-mark it unread and bump `created_at` to now so it resurfaces at the top
+   * of the feed. Used to collapse a burst of chat messages into one counter row.
+   */
+  refreshNotification(id: string, title: string, body: string, data: Record<string, unknown>): void {
+    this.db
+      .prepare(
+        "UPDATE notifications SET title = ?, body = ?, data = ?, read = 0, created_at = datetime('now') WHERE id = ?",
+      )
+      .run(title, body, JSON.stringify(data ?? {}), id);
+  }
+
   /**
    * Run a set of writes inside a single transaction so they commit (and fsync)
    * once instead of per-statement. Used to collapse the per-recipient
