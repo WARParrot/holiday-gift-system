@@ -38,7 +38,7 @@ function main(): void {
   const repo = new Repository(db);
 
   const pw = hashPassword('password');
-  const mkUser = (email: string, fullName: string, birthdate: string, role: UserRow['role'] = 'USER'): UserRow => ({
+  const mkUser = (email: string, fullName: string, birthdate: string, role: UserRow['role'] = 'USER', balance = 0): UserRow => ({
     id: randomUUID(),
     email,
     passwordHash: pw,
@@ -46,15 +46,16 @@ function main(): void {
     birthdate,
     avatarUrl: null,
     role,
+    balance,
     createdAt: new Date().toISOString(),
   });
 
-  const alice = mkUser('alice@example.com', 'Alice Andersson', '1996-05-12');
-  const bob = mkUser('bob@example.com', 'Bob Brown', '1994-11-03');
-  const carol = mkUser('carol@example.com', 'Carol Chen', isoInDays(1));
-  const dave = mkUser('dave@example.com', 'Dave Diaz', isoInDays(7));
-  const erin = mkUser('erin@example.com', 'Erin Eriksson', isoInDays(14));
-  const admin = mkUser('admin@example.com', 'Admin User', '1990-01-01', 'ADMIN');
+  const alice = mkUser('alice@example.com', 'Alice Andersson', '1996-05-12', 'USER', 250);
+  const bob = mkUser('bob@example.com', 'Bob Brown', '1994-11-03', 'USER', 120);
+  const carol = mkUser('carol@example.com', 'Carol Chen', isoInDays(1), 'USER', 0);
+  const dave = mkUser('dave@example.com', 'Dave Diaz', isoInDays(7), 'USER', 40);
+  const erin = mkUser('erin@example.com', 'Erin Eriksson', isoInDays(14), 'USER', 300);
+  const admin = mkUser('admin@example.com', 'Admin User', '1990-01-01', 'ADMIN', 0);
   const users = [alice, bob, carol, dave, erin, admin];
   for (const u of users) repo.createUser(u);
 
@@ -115,8 +116,47 @@ function main(): void {
     calendarSync: false, createdAt: new Date().toISOString(),
   });
 
+  // An ACTIVE crowdfunding pool for Carol (birthday tomorrow) so the gift-pool
+  // display is populated out of the box. Alice and Bob have already chipped in.
+  const carolRoom = repo.getOrCreateRoomForSubject(carol.id, randomUUID());
+  const cycle = new Date().getUTCFullYear();
+  repo.createPool({
+    id: randomUUID(),
+    subjectId: carol.id,
+    subjectName: carol.fullName,
+    roomId: carolRoom.id,
+    targetAmount: 150,
+    currentBalance: 0,
+    status: 'OPEN',
+    openedAt: new Date().toISOString(),
+    cycleKey: `${carol.id}:${cycle}`,
+  });
+  const carolPool = repo.getPoolByRoom(carolRoom.id)!;
+
+  // Seed a couple of real contributions, debiting the contributors' wallets so
+  // balances and the pool total are internally consistent.
+  const seedContribution = (fromUser: UserRow, amount: number) => {
+    const txRef = `SEED-${randomUUID().slice(0, 8).toUpperCase()}`;
+    repo.applyWalletTransaction({
+      id: randomUUID(), userId: fromUser.id, kind: 'CONTRIBUTION',
+      amount: -amount, memo: `Gift pool for ${carol.fullName}`, txRef,
+    });
+    repo.addContribution({
+      id: randomUUID(), poolId: carolPool.id, contributorId: fromUser.id,
+      contributorName: '', amount, txRef, createdAt: new Date().toISOString(),
+    });
+  };
+  seedContribution(alice, 50);
+  seedContribution(bob, 30);
+
+  // Seed a top-up transaction for Alice so her wallet ledger isn't empty.
+  repo.applyWalletTransaction({
+    id: randomUUID(), userId: alice.id, kind: 'TOPUP',
+    amount: 100, memo: 'Top-up via Mock card', txRef: `SEED-${randomUUID().slice(0, 8).toUpperCase()}`,
+  });
+
   // eslint-disable-next-line no-console
-  console.log(`Seeded ${users.length} users, 2 groups, wishlists and subscriptions at ${config.dbFile}`);
+  console.log(`Seeded ${users.length} users, 2 groups, wishlists, subscriptions, and an active gift pool at ${config.dbFile}`);
   // eslint-disable-next-line no-console
   console.log('Logins: alice@ / bob@ / carol@ / dave@ / erin@ / admin@example.com  (password: "password")');
 }

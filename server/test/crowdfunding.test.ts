@@ -10,7 +10,7 @@ import type { UserRow } from '../src/types/domain.js';
 function mkUser(email: string, name: string): UserRow {
   return {
     id: randomUUID(), email, passwordHash: hashPassword('password'),
-    fullName: name, birthdate: '1990-01-01', avatarUrl: null, role: 'USER', createdAt: new Date().toISOString(),
+    fullName: name, birthdate: '1990-01-01', avatarUrl: null, role: 'USER', balance: 0, createdAt: new Date().toISOString(),
   };
 }
 

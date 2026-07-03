@@ -26,6 +26,7 @@ export function authRoutes(ctx: AppContext): Router {
       birthdate: body.birthdate,
       avatarUrl: body.avatarUrl ?? null,
       role: 'USER',
+      balance: 0,
       createdAt: new Date().toISOString(),
     });
     const user = repo.findUserById(id)!;

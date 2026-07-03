@@ -3,7 +3,14 @@ import { randomUUID } from 'node:crypto';
 import type { AppContext } from './context.js';
 import { requireAdmin, requireAuth } from '../middleware/auth.js';
 import { parseBody } from '../util/validate.js';
-import { adminImportSchema, adminUserUpsertSchema } from './schemas.js';
+import {
+  adminBalanceSchema,
+  adminGroupMemberSchema,
+  adminGroupUpsertSchema,
+  adminImportSchema,
+  adminPoolFinanceSchema,
+  adminUserUpsertSchema,
+} from './schemas.js';
 import { hashPassword } from '../util/auth.js';
 import type { UserRow } from '../types/domain.js';
 
@@ -37,6 +44,7 @@ export function adminRoutes(ctx: AppContext): Router {
       birthdate: body.birthdate,
       avatarUrl: body.avatarUrl ?? null,
       role: body.role,
+      balance: 0,
       createdAt: new Date().toISOString(),
     });
     res.status(201).json({ user: repo.toPublic(repo.findUserById(id)!) });
@@ -64,14 +72,153 @@ export function adminRoutes(ctx: AppContext): Router {
     res.json({ ok: true });
   });
 
-  // --- Groups ------------------------------------------------------------
+  // PATCH /api/admin/users/:id/balance — adjust or set a user's wallet balance
+  router.patch('/users/:id/balance', (req, res) => {
+    const user = repo.findUserById(req.params.id);
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    const body = parseBody(adminBalanceSchema, req.body, res);
+    if (!body) return;
+
+    const delta = body.mode === 'set' ? body.amount - user.balance : body.amount;
+    const tx = repo.applyWalletTransaction({
+      id: randomUUID(),
+      userId: user.id,
+      kind: 'ADMIN_ADJUST',
+      amount: delta,
+      memo: body.memo || `Admin ${body.mode} by ${req.principal!.userId}`,
+      txRef: `ADMIN-${Date.now().toString(36).toUpperCase()}`,
+      allowNegative: true,
+    });
+    if (!tx) {
+      res.status(400).json({ error: 'Adjustment failed' });
+      return;
+    }
+    res.json({ user: repo.toPublic(repo.findUserById(user.id)!), transaction: tx });
+  });
+
+  // GET /api/admin/users/:id/wallet — a user's balance + ledger
+  router.get('/users/:id/wallet', (req, res) => {
+    if (!repo.findUserById(req.params.id)) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    res.json({
+      balance: repo.getBalance(req.params.id),
+      transactions: repo.listWalletTransactions(req.params.id, 100),
+    });
+  });
+
+  // --- Crowdfunding pools (money management) -----------------------------
+  router.get('/pools', (_req, res) => {
+    const pools = repo.listAllPools().map((p) => ({
+      ...p,
+      contributions: repo.listContributions(p.id).length,
+    }));
+    res.json({ pools });
+  });
+
+  router.put('/pools/:id', (req, res) => {
+    const pool = repo.getPoolById(req.params.id);
+    if (!pool) {
+      res.status(404).json({ error: 'Pool not found' });
+      return;
+    }
+    const body = parseBody(adminPoolFinanceSchema, req.body, res);
+    if (!body) return;
+    const updated = repo.updatePoolFinance(pool.id, {
+      targetAmount: body.targetAmount,
+      currentBalance: body.currentBalance,
+      status: body.status,
+    });
+    // Push the change live to anyone watching the room.
+    if (updated) ctx.hub.current?.publishPool(updated);
+    res.json({ pool: updated });
+  });
+
+  // --- Groups (full management) ------------------------------------------
   router.get('/groups', (req, res) => {
-    res.json({ groups: repo.listGroups(req.principal!.userId) });
+    const groups = repo.listGroups(req.principal!.userId).map((g) => ({
+      ...g,
+      members: repo.listGroupMembers(g.id),
+    }));
+    res.json({ groups });
+  });
+
+  router.post('/groups', (req, res) => {
+    const body = parseBody(adminGroupUpsertSchema, req.body, res);
+    if (!body) return;
+    const ownerId = body.ownerId ?? req.principal!.userId;
+    if (!repo.findUserById(ownerId)) {
+      res.status(400).json({ error: 'Owner user not found' });
+      return;
+    }
+    const group = {
+      id: randomUUID(),
+      name: body.name,
+      description: body.description ?? '',
+      visibility: body.visibility,
+      ownerId,
+      createdAt: new Date().toISOString(),
+    };
+    repo.createGroup(group);
+    repo.addMember(group.id, ownerId);
+    res.status(201).json({ group });
+  });
+
+  router.put('/groups/:id', (req, res) => {
+    const group = repo.getGroup(req.params.id);
+    if (!group) {
+      res.status(404).json({ error: 'Group not found' });
+      return;
+    }
+    const body = parseBody(adminGroupUpsertSchema, req.body, res);
+    if (!body) return;
+    if (body.ownerId && !repo.findUserById(body.ownerId)) {
+      res.status(400).json({ error: 'Owner user not found' });
+      return;
+    }
+    repo.updateGroup(group.id, {
+      name: body.name,
+      description: body.description ?? '',
+      visibility: body.visibility,
+      ownerId: body.ownerId,
+    });
+    if (body.ownerId) repo.addMember(group.id, body.ownerId);
+    res.json({ group: repo.getGroup(group.id), members: repo.listGroupMembers(group.id) });
   });
 
   router.delete('/groups/:id', (req, res) => {
     repo.deleteGroup(req.params.id);
     res.json({ ok: true });
+  });
+
+  router.post('/groups/:id/members', (req, res) => {
+    const group = repo.getGroup(req.params.id);
+    if (!group) {
+      res.status(404).json({ error: 'Group not found' });
+      return;
+    }
+    const body = parseBody(adminGroupMemberSchema, req.body, res);
+    if (!body) return;
+    if (!repo.findUserById(body.userId)) {
+      res.status(400).json({ error: 'User not found' });
+      return;
+    }
+    repo.addMember(group.id, body.userId);
+    res.status(201).json({ members: repo.listGroupMembers(group.id) });
+  });
+
+  router.delete('/groups/:id/members/:userId', (req, res) => {
+    const group = repo.getGroup(req.params.id);
+    if (!group) {
+      res.status(404).json({ error: 'Group not found' });
+      return;
+    }
+    repo.removeMember(group.id, req.params.userId);
+    res.json({ members: repo.listGroupMembers(group.id) });
   });
 
   // --- Wishlists ---------------------------------------------------------
@@ -131,6 +278,7 @@ export function adminRoutes(ctx: AppContext): Router {
         birthdate: rec.birthdate,
         avatarUrl: rec.avatarUrl ?? null,
         role: rec.role === 'ADMIN' ? 'ADMIN' : 'USER',
+        balance: 0,
         createdAt: new Date().toISOString(),
       });
       created += 1;
