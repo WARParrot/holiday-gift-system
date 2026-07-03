@@ -44,10 +44,10 @@ export interface AppConfig {
    * used to build OAuth redirect URIs. Defaults to http://localhost:<port>.
    */
   publicBaseUrl: string;
-  /** External-calendar OAuth config. A provider is "live" only when configured. */
+  /** External-calendar config. A provider is "live" only when configured. */
   calendar: {
     google: GoogleOAuthConfig | null;
-    yandex: YandexOAuthConfig | null;
+    yandex: YandexCalDavConfig | null;
   };
 }
 
@@ -72,22 +72,22 @@ export interface GoogleOAuthConfig {
 }
 
 /**
- * Yandex Calendar OAuth2 + CalDAV settings. `null` means demo/recording mode.
- * Yandex Calendar is a CalDAV service; we authenticate CalDAV requests with the
- * OAuth bearer token. The collection path is discovered from the userinfo login
- * unless CALDAV path overrides are supplied.
+ * Yandex Calendar CalDAV settings. `null` means demo/recording mode.
+ *
+ * IMPORTANT: Yandex Calendar is a CalDAV service that authenticates with HTTP
+ * Basic auth using a Yandex account login + an **app-specific password** — it
+ * does NOT accept an OAuth2 bearer token (verified against Yandex's official
+ * docs: support/yandex-360/customers/calendar .../sync/sync-desktop, which
+ * instruct users to create a Calendar app password). So, unlike Google, Yandex
+ * is not an OAuth provider here: each user supplies their login + app password,
+ * which we store per-user and send as `Authorization: Basic base64(login:pw)`.
+ *
+ * This config block holds only the (non-secret) CalDAV endpoint + collection
+ * path; the per-user credentials live in calendar_oauth_tokens.
  */
-export interface YandexOAuthConfig {
-  clientId: string;
-  clientSecret: string;
-  redirectUri: string;
-  authUrl: string;
-  tokenUrl: string;
+export interface YandexCalDavConfig {
   /** CalDAV base origin, e.g. https://caldav.yandex.ru */
   caldavBase: string;
-  /** userinfo endpoint returning the account login/email. */
-  userinfoUrl: string;
-  scope: string;
   /**
    * CalDAV calendar collection path template. `{login}` is substituted with the
    * account login. Default matches Yandex's per-user events collection.
@@ -123,19 +123,14 @@ function buildGoogleConfig(env: NodeJS.ProcessEnv, publicBaseUrl: string): Googl
   };
 }
 
-function buildYandexConfig(env: NodeJS.ProcessEnv, publicBaseUrl: string): YandexOAuthConfig | null {
-  const clientId = env.YANDEX_CLIENT_ID;
-  const clientSecret = env.YANDEX_CLIENT_SECRET;
-  if (!clientId || !clientSecret) return null;
+function buildYandexConfig(env: NodeJS.ProcessEnv): YandexCalDavConfig | null {
+  // Yandex is CalDAV + Basic-auth (app password), NOT OAuth — there are no
+  // client id/secret. It's gated by an explicit opt-in flag so the default demo
+  // build still runs Yandex in recording mode with zero setup. Enable it once
+  // you're ready for users to connect real Yandex accounts via app password.
+  if (env.YANDEX_CALDAV_ENABLED !== '1') return null;
   return {
-    clientId,
-    clientSecret,
-    redirectUri: env.YANDEX_REDIRECT_URI || `${publicBaseUrl}/api/calendar/oauth/yandex/callback`,
-    authUrl: env.YANDEX_AUTH_URL || 'https://oauth.yandex.com/authorize',
-    tokenUrl: env.YANDEX_TOKEN_URL || 'https://oauth.yandex.com/token',
     caldavBase: env.YANDEX_CALDAV_BASE || 'https://caldav.yandex.ru',
-    userinfoUrl: env.YANDEX_USERINFO_URL || 'https://login.yandex.ru/info',
-    scope: env.YANDEX_SCOPE || 'login:email calendar:all',
     calendarPathTemplate: env.YANDEX_CALDAV_PATH_TEMPLATE || '/calendars/{login}/events-default/',
   };
 }
@@ -185,7 +180,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     publicBaseUrl,
     calendar: {
       google: buildGoogleConfig(env, publicBaseUrl),
-      yandex: buildYandexConfig(env, publicBaseUrl),
+      yandex: buildYandexConfig(env),
     },
   };
 }

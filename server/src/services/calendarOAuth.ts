@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import type { AppConfig, GoogleOAuthConfig, YandexOAuthConfig } from '../config.js';
+import type { AppConfig, GoogleOAuthConfig } from '../config.js';
 import type { Repository } from '../db/repository.js';
 import type { CalendarOAuthToken, CalendarProviderName } from '../types/domain.js';
 
@@ -37,12 +37,17 @@ export interface OAuthProviderConfig {
   scope: string;
 }
 
-/** Narrow a provider name to its configured OAuth block, or null if not live. */
+/**
+ * Narrow a provider name to its configured OAuth block, or null if not an OAuth
+ * provider / not configured. Only Google is an OAuth calendar provider here —
+ * Yandex authenticates CalDAV with a Basic-auth app password, not OAuth — so
+ * this returns null for anything other than a configured Google.
+ */
 export function oauthConfigFor(
   config: AppConfig,
   provider: CalendarProviderName,
-): GoogleOAuthConfig | YandexOAuthConfig | null {
-  return provider === 'google' ? config.calendar.google : config.calendar.yandex;
+): GoogleOAuthConfig | null {
+  return provider === 'google' ? config.calendar.google : null;
 }
 
 const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes to complete the consent flow

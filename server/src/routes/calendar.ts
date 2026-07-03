@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import type { AppContext } from './context.js';
 import { requireAuth } from '../middleware/auth.js';
+import { parseBody } from '../util/validate.js';
+import { yandexCalDavConnectSchema } from './schemas.js';
+import { YandexCalendarProvider } from '../services/calendarSync.js';
 import type { CalendarProviderName } from '../types/domain.js';
 
 /**
@@ -92,8 +95,12 @@ export function calendarRoutes(ctx: AppContext): Router {
     });
   });
 
-  // Begin the connect flow. Live providers → redirect to consent; demo
-  // providers → record the connection directly and report it.
+  // Begin the connect flow. The mode depends on the provider's auth model:
+  //   - demo (not live)      → record a labelled connection directly, no external call;
+  //   - google (live, OAuth) → return an authorize URL for the SPA to redirect to;
+  //   - yandex (live, CalDAV)→ return mode 'caldav' so the SPA collects login +
+  //                             app password and POSTs them to the endpoint below
+  //                             (Yandex CalDAV uses Basic auth, not OAuth).
   router.get('/oauth/:provider/start', async (req, res) => {
     const provider = req.params.provider;
     if (!isProvider(provider)) {
@@ -103,10 +110,17 @@ export function calendarRoutes(ctx: AppContext): Router {
     const userId = req.principal!.userId;
 
     if (!calendar.isLive(provider)) {
-      // Demo mode: no external OAuth. Record a labelled connection and sync.
+      // Demo mode: no external auth. Record a labelled connection and sync.
       repo.connectCalendar(userId, provider, `${provider}-demo`);
       const eventsSynced = await backSync(ctx, userId);
       res.json({ mode: 'demo', connected: true, eventsSynced });
+      return;
+    }
+
+    if (provider === 'yandex') {
+      // Live Yandex is CalDAV + app-password: no redirect, the SPA collects
+      // credentials and posts them to POST /connections/yandex/caldav.
+      res.json({ mode: 'caldav' });
       return;
     }
 
@@ -119,6 +133,53 @@ export function calendarRoutes(ctx: AppContext): Router {
     // The SPA calls this with fetch; return the URL so it can redirect the
     // top-level window (a 302 would be opaque to fetch/CORS).
     res.json({ mode: 'oauth', authorizeUrl: url });
+  });
+
+  // Connect Yandex Calendar with a login + app-specific password (CalDAV Basic
+  // auth). We verify the credential against the CalDAV server (PROPFIND) BEFORE
+  // storing it, so a wrong app password is rejected up front rather than failing
+  // later during background sync. On success we store the credential (as a
+  // 'Basic'-type row in calendar_oauth_tokens: accessToken=app password,
+  // accountLogin=login), record the connection, and back-sync.
+  router.post('/connections/yandex/caldav', async (req, res) => {
+    const userId = req.principal!.userId;
+    const cfg = config.calendar.yandex;
+    if (!cfg) {
+      res.status(409).json({ error: 'Yandex live sync is not enabled on this server (demo mode).' });
+      return;
+    }
+    const body = parseBody(yandexCalDavConnectSchema, req.body, res);
+    if (!body) return;
+
+    let ok = false;
+    try {
+      ok = await YandexCalendarProvider.verifyCredentials(cfg, body.login, body.appPassword);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Yandex CalDAV verification error:', err);
+      res.status(502).json({ error: 'Could not reach Yandex CalDAV to verify credentials.' });
+      return;
+    }
+    if (!ok) {
+      res.status(401).json({
+        error: 'Yandex rejected the login or app password. Use an app password from Yandex ID → App passwords → Calendar.',
+      });
+      return;
+    }
+
+    repo.upsertCalendarToken({
+      userId,
+      provider: 'yandex',
+      accessToken: body.appPassword, // the app password IS the credential
+      refreshToken: '',
+      tokenType: 'Basic',
+      scope: 'caldav',
+      accountLogin: body.login,
+      expiresAt: 0, // app passwords don't expire until revoked
+    });
+    repo.connectCalendar(userId, 'yandex', body.login);
+    const eventsSynced = await backSync(ctx, userId);
+    res.status(201).json({ mode: 'caldav', connected: true, eventsSynced });
   });
 
   router.delete('/connections/:provider', (req, res) => {

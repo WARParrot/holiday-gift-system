@@ -16,6 +16,35 @@ This repository is a **monorepo** with two packages:
 > Read it first — it explains *why* every subsystem is built the way it is,
 > including the secret-chat exclusion model and the crowdfunding pseudo-bank.
 
+## What's new in 1.5 (Yandex calendar sync corrected to CalDAV app-password)
+
+Fixes a real integration bug: the v1.3/1.4 Yandex adapter authenticated CalDAV
+with the OAuth2 bearer token, which **Yandex rejects** (a live connect attempt
+returned `401` on the CalDAV `PUT`). Verified against Yandex's official docs —
+Yandex Calendar syncs over **CalDAV with an app-specific password** (HTTP Basic
+auth) and has **no OAuth-authenticated calendar-write API**.
+
+- **Yandex is now Basic-auth CalDAV, not OAuth.** No Yandex OAuth app / client
+  id/secret. Each user connects by entering their Yandex login + a Calendar
+  **app password** (Yandex ID → Security → App passwords → Calendar). The server
+  verifies the credential against the CalDAV server (a depth-0 `PROPFIND`)
+  **before** storing it, so a wrong app password is rejected up front (401)
+  rather than failing silently during background sync.
+- **Google is unchanged** — still OAuth2 + Calendar API v3.
+- **Live switch:** Google = `GOOGLE_CLIENT_ID`/`SECRET` set; Yandex =
+  `YANDEX_CALDAV_ENABLED=1`. Unconfigured providers still run in demo/recording
+  mode, so the app and tests need no accounts.
+- The `Authorization` header is now assembled per provider (`Bearer …` for
+  Google, `Basic base64(login:app-password)` for Yandex) behind one adapter
+  interface. UI: Yandex's "Connect" reveals a login + app-password form instead
+  of an OAuth redirect.
+
+> Honest limit (unchanged posture): the adapters are verified against in-process
+> mock Google-REST and Yandex-CalDAV servers — including that Yandex uses Basic
+> auth, not Bearer — **not** against the live services. Live Yandex success also
+> depends on the account allowing app passwords (some Yandex 360 orgs disable
+> them by policy).
+
 ## What's new in 1.4 (dependency-security pass + real `.env` loading)
 
 - **Vulnerable dependencies patched.** `npm audit` reports **0 vulnerabilities**

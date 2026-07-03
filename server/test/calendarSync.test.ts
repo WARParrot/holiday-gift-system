@@ -7,7 +7,7 @@ import { openDatabase } from '../src/db/schema.js';
 import { Repository } from '../src/db/repository.js';
 import { loadConfig } from '../src/config.js';
 import { CalendarOAuthService } from '../src/services/calendarOAuth.js';
-import { CalendarSyncService } from '../src/services/calendarSync.js';
+import { CalendarSyncService, YandexCalendarProvider } from '../src/services/calendarSync.js';
 import { buildBirthdayIcs } from '../src/services/ics.js';
 import { hashPassword } from '../src/util/auth.js';
 import type { Subscription, UserRow } from '../src/types/domain.js';
@@ -147,25 +147,18 @@ test('Google adapter: OAuth token exchange, refresh on expiry, and idempotent ev
   }
 });
 
-test('Yandex adapter: CalDAV PUT of a valid VEVENT to a login-scoped href, idempotent DELETE', async () => {
+test('Yandex adapter: CalDAV Basic-auth PUT of a valid VEVENT to a login-scoped href, idempotent DELETE', async () => {
   const caldav: { method: string; path: string; auth: string; contentType: string; body: string }[] = [];
   const store = new Map<string, string>();
+  const EXPECTED_BASIC = `Basic ${Buffer.from('ivan@yandex.ru:app-pass-1234', 'utf8').toString('base64')}`;
 
   const { server, base } = await listen(async (req, res) => {
     const url = req.url ?? '';
     const b = await body(req);
-    if (url === '/token') {
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ access_token: 'YA-ACCESS', refresh_token: 'YA-REFRESH', token_type: 'OAuth', expires_in: 3600 }));
-      return;
-    }
-    if (url === '/info') {
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ login: 'ivan', default_email: 'ivan@yandex.ru' }));
-      return;
-    }
-    // CalDAV collection paths
     caldav.push({ method: req.method ?? '', path: url, auth: req.headers.authorization ?? '', contentType: req.headers['content-type'] ?? '', body: b });
+    // Every CalDAV request must carry the Basic credential; reject otherwise.
+    if (req.headers.authorization !== EXPECTED_BASIC) { res.writeHead(401); res.end(); return; }
+    if (req.method === 'PROPFIND') { res.writeHead(207); res.end('<multistatus/>'); return; }
     if (req.method === 'PUT') { store.set(url, b); res.writeHead(201); res.end(); return; }
     if (req.method === 'DELETE') {
       if (store.has(url)) { store.delete(url); res.writeHead(204); res.end(); return; }
@@ -175,11 +168,10 @@ test('Yandex adapter: CalDAV PUT of a valid VEVENT to a login-scoped href, idemp
   });
 
   try {
+    // Yandex is CalDAV + app-password (Basic auth), NOT OAuth — no client id/secret.
     const env = {
       DB_FILE: ':memory:', ENABLE_SCHEDULER: '0',
-      YANDEX_CLIENT_ID: 'cid', YANDEX_CLIENT_SECRET: 'secret',
-      YANDEX_TOKEN_URL: `${base}/token`,
-      YANDEX_USERINFO_URL: `${base}/info`,
+      YANDEX_CALDAV_ENABLED: '1',
       YANDEX_CALDAV_BASE: base,
       YANDEX_CALDAV_PATH_TEMPLATE: '/calendars/{login}/events-default/',
     } as NodeJS.ProcessEnv;
@@ -195,22 +187,24 @@ test('Yandex adapter: CalDAV PUT of a valid VEVENT to a login-scoped href, idemp
     const sync = new CalendarSyncService({ repo, config, oauth });
     assert.equal(sync.isLive('yandex'), true);
 
-    const tokens = await oauth.exchangeCode('yandex', 'code');
-    const login = await oauth.fetchAccountLogin('yandex', tokens.accessToken);
-    assert.equal(login, 'ivan@yandex.ru');
+    // A wrong app password fails verification (401 → false); the right one verifies (207).
+    assert.equal(await YandexCalendarProvider.verifyCredentials(config.calendar.yandex!, 'ivan@yandex.ru', 'WRONG'), false);
+    assert.equal(await YandexCalendarProvider.verifyCredentials(config.calendar.yandex!, 'ivan@yandex.ru', 'app-pass-1234'), true);
+
+    // Connect stores the app password as the credential (tokenType 'Basic').
     repo.upsertCalendarToken({
-      userId: subscriber.id, provider: 'yandex', accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken, tokenType: tokens.tokenType, scope: tokens.scope,
-      accountLogin: login, expiresAt: tokens.expiresAt,
+      userId: subscriber.id, provider: 'yandex', accessToken: 'app-pass-1234',
+      refreshToken: '', tokenType: 'Basic', scope: 'caldav',
+      accountLogin: 'ivan@yandex.ru', expiresAt: 0,
     });
-    repo.connectCalendar(subscriber.id, 'yandex', login);
+    repo.connectCalendar(subscriber.id, 'yandex', 'ivan@yandex.ru');
 
     const pushed = await sync.syncSubjects(sub(subscriber.id, subject.id), [subject]);
     assert.equal(pushed.length, 1);
 
     const put = caldav.find((c) => c.method === 'PUT');
     assert.ok(put, 'a PUT was made');
-    assert.equal(put!.auth, 'Bearer YA-ACCESS');
+    assert.equal(put!.auth, EXPECTED_BASIC, 'CalDAV PUT used Basic auth (login:app-password), not Bearer');
     assert.match(put!.contentType, /text\/calendar/);
     // href is scoped to the account login and ends with an .ics resource.
     assert.match(put!.path, /^\/calendars\/ivan%40yandex\.ru\/events-default\/.*\.ics$/);
@@ -221,10 +215,9 @@ test('Yandex adapter: CalDAV PUT of a valid VEVENT to a login-scoped href, idemp
     assert.match(put!.body, /DTSTART;VALUE=DATE:19880229/);
     assert.match(put!.body, /SUMMARY:.*O'Brien\\, Jr\./, 'comma in name is escaped');
 
-    // Idempotent delete.
+    // Idempotent delete (also Basic-authed).
     await sync.removeSubjects(sub(subscriber.id, subject.id), [subject]);
     assert.equal(store.size, 0, 'resource removed');
-    // Deleting again is a no-op (404 swallowed).
     await sync.removeSubjects(sub(subscriber.id, subject.id), [subject]);
   } finally {
     server.close();

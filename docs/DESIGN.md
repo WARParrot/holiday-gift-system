@@ -576,3 +576,68 @@ only stable `plugins`/`server.proxy` options unaffected by the v5→v6 changes).
 
 Only one new runtime dependency (`dotenv`, exact-pinned) was added.
 
+---
+
+## 17. Version 1.5 — Yandex calendar corrected to CalDAV app-password auth
+
+### 17.1 The bug and the verification
+
+The v1.3 Yandex adapter (and its v1.4 dependency bump) authenticated CalDAV with
+the OAuth2 **bearer** token. A live connect attempt failed: token exchange and
+userinfo succeeded, but the CalDAV `PUT` returned **401**. Checked against
+Yandex's official docs
+(*support/yandex-360/customers/calendar/…/sync/sync-desktop* and *sync-mobile*):
+Yandex Calendar syncs over **CalDAV** and authenticates with HTTP **Basic auth**
+using the account login + an **app-specific password** created in Yandex ID.
+Those pages contain zero mention of `oauth`/`bearer`/`token`; the only documented
+credential is an app password. There is no OAuth-authenticated Yandex
+calendar-write API — so "OAuth2 for Yandex writes" is not achievable, and the
+symmetric-OAuth design of §15 was wrong for Yandex specifically.
+
+Why it wasn't caught earlier: the §15 Yandex test asserted against a mock CalDAV
+server *I wrote to accept the bearer* — the mock validated my assumption, not
+Yandex's actual contract. This is the standing "verified against mocks, not the
+live service" caveat coming due.
+
+### 17.2 The corrected model
+
+Yandex is no longer an OAuth provider. Google stays OAuth2 REST; the two now
+authenticate differently, reflecting the vendor asymmetry:
+
+- **Config**: `YandexOAuthConfig` → `YandexCalDavConfig` (just `caldavBase` +
+  `calendarPathTemplate`; no client id/secret/redirect). Live gate changed from
+  "client id+secret present" to an explicit `YANDEX_CALDAV_ENABLED=1` opt-in
+  (default off ⇒ recording demo). `oauthConfigFor` is now Google-only.
+- **Credential**: per-user login + app password, stored in the existing
+  `calendar_oauth_tokens` row as `tokenType='Basic'`, `accessToken`=app password,
+  `accountLogin`=login, `expiresAt=0` (app passwords don't expire until revoked).
+  No refresh path.
+- **Auth header**: `CalendarAuth` now carries a fully-formed `authHeader`.
+  `CalendarSyncService.authFor` builds `Bearer <token>` for Google (refresh on
+  expiry as before) and `Basic base64(login:app-password)` for Yandex. Adapters
+  are agnostic to how the credential was formed.
+- **Connect flow**: Google `start` → `{mode:'oauth', authorizeUrl}` (unchanged);
+  Yandex `start` → `{mode:'caldav'}`, signalling the SPA to collect a login +
+  app password and POST them to the new
+  `POST /api/calendar/connections/yandex/caldav`. That route calls
+  `YandexCalendarProvider.verifyCredentials` — a depth-0 `PROPFIND` on the
+  events collection — and only stores the credential on a 207/2xx, returning 401
+  on a bad app password. The SPA renders a login + app-password form for Yandex
+  instead of an OAuth redirect.
+
+### 17.3 Tests
+
+- `test/calendarSync.test.ts` — the Yandex case rewritten to assert **Basic**
+  auth: the mock CalDAV server 401s unless the request carries
+  `Basic base64(login:app-password)`; `verifyCredentials` returns false on a
+  wrong password (401) and true on the right one (207); PUT/DELETE carry Basic
+  and hit the login-scoped `.ics` href; ICS body still RFC-5545 correct.
+- `test/calendarOAuthRoutes.test.ts` — added a route test: Yandex `start`
+  returns `mode:'caldav'`; a wrong app password is rejected (401, nothing
+  stored); the right one verifies via PROPFIND, stores a `Basic` credential,
+  connects, and back-syncs.
+
+Total: **35 tests**. Standing limit unchanged: verified against mock protocol
+servers, not live Yandex; live success also depends on the account permitting
+app passwords (some Yandex 360 orgs disable them).
+

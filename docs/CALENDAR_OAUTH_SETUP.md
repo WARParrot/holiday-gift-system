@@ -2,17 +2,24 @@
 
 BCMS can push a recurring yearly birthday event into a user's **Google
 Calendar** and/or **Yandex Calendar** when they subscribe to a friend/group
-with calendar sync enabled. Each user authorizes their own calendar via OAuth2;
-the server stores per-user tokens and refreshes them automatically.
+with calendar sync enabled. Sync is per-user, but the two providers authenticate
+**differently** — this is a hard constraint of what each vendor exposes, not a
+design choice:
 
-> **Zero-setup default.** If you don't configure a provider's credentials, that
-> provider runs in **demo mode** — the connect flow still works and events are
-> recorded server-side (in memory), but nothing is written to a real calendar.
-> This is why the demo and the test suite need no external accounts. Configure
-> the credentials below to switch a provider to **live** sync.
+- **Google** — OAuth2 + Calendar API v3. Each user authorizes via the OAuth
+  consent screen; the server stores + refreshes their token.
+- **Yandex** — CalDAV + an **app-specific password** (HTTP Basic auth). Yandex
+  Calendar does **not** accept OAuth for calendar writes, so there is no Yandex
+  OAuth app; each user supplies a login + Calendar app password instead.
 
-The switch is automatic and per-provider: a provider is **live** iff **both** its
-`*_CLIENT_ID` and `*_CLIENT_SECRET` are set. Otherwise it's demo.
+> **Zero-setup default.** If a provider isn't configured, it runs in **demo
+> mode** — the connect flow still works and events are recorded server-side (in
+> memory), but nothing is written to a real calendar. This is why the demo and
+> the test suite need no external accounts.
+
+Per-provider live switch: **Google** is live iff `GOOGLE_CLIENT_ID` and
+`GOOGLE_CLIENT_SECRET` are set; **Yandex** is live iff `YANDEX_CALDAV_ENABLED=1`.
+Otherwise the provider is demo.
 
 ## Where to put the credentials (`.env`)
 
@@ -96,26 +103,42 @@ the same event rather than duplicating it.
 
 ## Yandex Calendar
 
-Yandex Calendar is a **CalDAV** service; we authenticate CalDAV requests with the
-OAuth2 bearer token.
+**Yandex Calendar is NOT OAuth.** Unlike Google, Yandex exposes calendar writes
+only through **CalDAV**, which authenticates with HTTP **Basic auth** using a
+Yandex account login + an **app-specific password** — it does *not* accept an
+OAuth2 bearer token. (Verified against Yandex's official docs:
+*support/yandex-360/customers/calendar/…/sync/sync-desktop*, which instruct users
+to create a **Calendar app password**; there is no OAuth-authenticated Yandex
+Calendar write API.)
 
-1. Go to the [Yandex OAuth app registry](https://oauth.yandex.com/client/new).
-2. Create an application. Under **Platforms** choose *Web services* and set the
-   **Redirect URI** to exactly:
-   ```
-   https://YOUR_HOST/api/calendar/oauth/yandex/callback
-   ```
-3. Under **Permissions**, grant calendar access and email login (scopes
-   `calendar:all` and `login:email`).
-4. Add the client id/secret to `server/.env`:
-   ```bash
-   YANDEX_CLIENT_ID=xxxxxxxx
-   YANDEX_CLIENT_SECRET=xxxxxxxx
-   PUBLIC_BASE_URL=http://localhost:4000
-   # optional overrides:
-   # YANDEX_CALDAV_PATH_TEMPLATE=/calendars/{login}/events-default/
-   ```
-   Restart the server after editing `.env`.
+So there is **no Yandex app to register and no client id/secret.** Instead:
+
+### Server side — enable live Yandex sync
+
+In `server/.env`:
+```bash
+YANDEX_CALDAV_ENABLED=1
+# optional overrides:
+# YANDEX_CALDAV_BASE=https://caldav.yandex.ru
+# YANDEX_CALDAV_PATH_TEMPLATE=/calendars/{login}/events-default/
+```
+Without `YANDEX_CALDAV_ENABLED=1`, Yandex runs in demo/recording mode (the
+default), so the app works out of the box with no Yandex account. Restart the
+server after editing `.env`.
+
+### Per user — connect with an app password
+
+Each user connects their own Yandex account from the profile → Calendar tab:
+1. In **Yandex ID → Security → App passwords**, create a password of type
+   **Calendar**. (You can only see it once.)
+2. In BCMS, click **Connect Yandex Calendar**, then enter the Yandex **login/email**
+   and the **app password**.
+
+The server verifies the credential against the CalDAV server (a depth-0
+`PROPFIND`) **before storing it**, so a wrong app password is rejected up front
+(HTTP 401) instead of failing later during background sync. On success the
+login + app password are stored per-user and sent as
+`Authorization: Basic base64(login:app-password)` on every CalDAV request.
 
 The adapter serialises each birthday to a single-VEVENT `.ics` resource (RFC
 5545: CRLF endings, 75-octet line folding, TEXT escaping, all-day `VALUE=DATE`
@@ -124,9 +147,14 @@ idempotent; `DELETE` removes it.
 
 > **Note on the CalDAV collection path:** the default template
 > `/calendars/{login}/events-default/` targets the account's default events
-> collection. If your Yandex account's collection differs, override
-> `YANDEX_CALDAV_PATH_TEMPLATE` (the `{login}` placeholder is filled from the
-> account login returned by userinfo).
+> collection. If your account's collection differs, override
+> `YANDEX_CALDAV_PATH_TEMPLATE` (`{login}` is filled from the login the user
+> supplies).
+
+> **Account caveat:** app-password CalDAV works for consumer `@yandex` accounts.
+> Some **Yandex 360 organizations disable app passwords by policy**, in which
+> case CalDAV writes are blocked regardless — that's an account-admin setting,
+> not something the app can work around.
 
 ---
 
@@ -134,17 +162,24 @@ idempotent; `DELETE` removes it.
 
 - **Without credentials:** `GET /api/calendar/connections` shows providers as
   `live:false`; the UI labels them "demo". Connecting records events in memory.
-- **With credentials:** the same endpoint reports `live:true`; "Connect" sends
-  you through the real consent screen and events appear in your actual calendar.
-- The adapters themselves are covered by `server/test/calendarSync.test.ts`,
-  which runs the real Google-REST and Yandex-CalDAV request logic against
-  in-process mock servers (token exchange, refresh-on-expiry, idempotent
-  upsert/delete, and RFC-5545 ICS generation) — no external accounts needed.
+- **When live:** the same endpoint reports `live:true`. Google's "Connect" sends
+  you through the real OAuth consent screen; Yandex's "Connect" reveals a
+  login + app-password form (CalDAV). In both cases events then appear in your
+  actual calendar.
+- The adapters themselves are covered by `server/test/calendarSync.test.ts` and
+  `server/test/calendarOAuthRoutes.test.ts`, which run the real Google-REST and
+  Yandex-CalDAV request logic against in-process mock servers: Google OAuth token
+  exchange + refresh-on-expiry, Yandex **Basic-auth** CalDAV (PROPFIND credential
+  check, then PUT/DELETE), idempotent upsert/delete, and RFC-5545 ICS
+  generation — no external accounts needed.
 
 ## Security notes
 
-- Tokens are stored in the app database. Protect the DB file and back it up
-  accordingly; treat it as containing secrets.
-- The OAuth `state` is signed with `JWT_SECRET`; keep that secret strong and
-  private (the server already refuses to boot in production with the default).
+- Credentials are stored in the app database — Google OAuth tokens and Yandex
+  app passwords alike. Protect the DB file and back it up accordingly; treat it
+  as containing secrets. Disconnecting a provider deletes its stored credential.
+- The Google OAuth `state` is signed with `JWT_SECRET`; keep that secret strong
+  and private (the server already refuses to boot in production with the default).
+- The Yandex app password is validated against the CalDAV server before storage
+  and is never logged.
 - Refresh tokens are long-lived; disconnecting a provider deletes them.

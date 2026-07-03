@@ -115,3 +115,70 @@ test('calendar OAuth routes: start → callback stores token, connects, and redi
     provider.server.close();
   }
 });
+
+test('Yandex connect route: verifies the app password via CalDAV PROPFIND, then stores a Basic credential', async () => {
+  const EXPECTED = `Basic ${Buffer.from('ivan@yandex.ru:good-app-pw', 'utf8').toString('base64')}`;
+  const propfinds: string[] = [];
+  // Mock CalDAV: PROPFIND 207 only when the Basic credential matches; else 401.
+  const caldav = await new Promise<{ server: Server; base: string }>((resolve) => {
+    const server = createServer(async (req, res) => {
+      await bodyOf(req);
+      propfinds.push(req.headers.authorization ?? '');
+      if (req.headers.authorization !== EXPECTED) { res.writeHead(401); res.end(); return; }
+      if (req.method === 'PROPFIND') { res.writeHead(207); res.end('<multistatus/>'); return; }
+      // back-sync PUT of the birthday event
+      if (req.method === 'PUT') { res.writeHead(201); res.end(); return; }
+      res.writeHead(500); res.end();
+    });
+    server.listen(0, '127.0.0.1', () => resolve({ server, base: `http://127.0.0.1:${(server.address() as AddressInfo).port}` }));
+  });
+
+  const app = createServer();
+  try {
+    const config = loadConfig({
+      DB_FILE: ':memory:', ENABLE_SCHEDULER: '0', RATE_LIMIT_MAX: '100000',
+      YANDEX_CALDAV_ENABLED: '1',
+      YANDEX_CALDAV_BASE: caldav.base,
+      YANDEX_CALDAV_PATH_TEMPLATE: '/calendars/{login}/events-default/',
+    } as NodeJS.ProcessEnv);
+    const repo = new Repository(openDatabase(':memory:'));
+    const user = mkUser('me@x.com', 'Me');
+    const friend = mkUser('bday@x.com', 'Birthday Person');
+    [user, friend].forEach((u) => repo.createUser(u));
+    repo.upsertSubscription({ id: randomUUID(), subscriberId: user.id, kind: 'FRIEND', targetId: friend.id, calendarSync: true, createdAt: '' });
+
+    const built = buildApp(config, repo);
+    app.on('request', built.app);
+    await new Promise<void>((r) => app.listen(0, '127.0.0.1', r));
+    const origin = `http://127.0.0.1:${(app.address() as AddressInfo).port}`;
+    const token = signToken({ userId: user.id, role: user.role }, config.jwtSecret, config.jwtTtl);
+    const auth = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+
+    // start → tells the SPA to collect CalDAV credentials (no redirect).
+    const startRes = await fetch(`${origin}/api/calendar/oauth/yandex/start`, { headers: { authorization: `Bearer ${token}` } });
+    assert.equal((await startRes.json() as { mode: string }).mode, 'caldav');
+
+    // A wrong app password is rejected up front (401), nothing stored.
+    const bad = await fetch(`${origin}/api/calendar/connections/yandex/caldav`, {
+      method: 'POST', headers: auth, body: JSON.stringify({ login: 'ivan@yandex.ru', appPassword: 'WRONG' }),
+    });
+    assert.equal(bad.status, 401);
+    assert.equal(repo.getCalendarToken(user.id, 'yandex'), undefined, 'nothing stored on bad credential');
+
+    // The right app password verifies, is stored as a Basic credential, connects, and back-syncs.
+    const good = await fetch(`${origin}/api/calendar/connections/yandex/caldav`, {
+      method: 'POST', headers: auth, body: JSON.stringify({ login: 'ivan@yandex.ru', appPassword: 'good-app-pw' }),
+    });
+    assert.equal(good.status, 201);
+    const stored = repo.getCalendarToken(user.id, 'yandex');
+    assert.ok(stored, 'credential stored');
+    assert.equal(stored!.tokenType, 'Basic');
+    assert.equal(stored!.accessToken, 'good-app-pw', 'app password is the credential');
+    assert.equal(stored!.accountLogin, 'ivan@yandex.ru');
+    assert.equal(repo.listCalendarConnections(user.id).length, 1);
+    assert.ok(propfinds.some((a) => a === EXPECTED), 'a PROPFIND carried the Basic credential');
+  } finally {
+    app.close();
+    caldav.server.close();
+  }
+});

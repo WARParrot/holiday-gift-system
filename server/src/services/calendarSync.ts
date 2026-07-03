@@ -1,5 +1,5 @@
 import type { Subscription, UserRow, CalendarProviderName } from '../types/domain.js';
-import type { AppConfig, GoogleOAuthConfig, YandexOAuthConfig } from '../config.js';
+import type { AppConfig, GoogleOAuthConfig, YandexCalDavConfig } from '../config.js';
 import type { Repository } from '../db/repository.js';
 import { CalendarOAuthService } from './calendarOAuth.js';
 import { buildBirthdayIcs } from './ics.js';
@@ -10,17 +10,19 @@ import { buildBirthdayIcs } from './ics.js';
  * When a user subscribes to a friend/group with calendar sync on, a recurring
  * yearly birthday event is pushed into each external calendar that user has
  * connected. Sync is therefore **per-user** — it depends on that user's own
- * OAuth tokens and connected providers, not a fixed global provider list.
+ * stored credentials and connected providers, not a fixed global provider list.
  *
- * Two adapter implementations sit behind one interface:
- *   - live adapters (`GoogleCalendarProvider`, `YandexCalendarProvider`) call
- *     the real Google Calendar REST API / Yandex CalDAV service with the user's
- *     OAuth bearer token;
- *   - `RecordingCalendarProvider` is an in-memory stand-in used automatically
- *     for any provider that isn't configured with OAuth credentials, so the
- *     demo and the test suite run with zero external setup.
+ * The two live providers authenticate DIFFERENTLY, reflecting what each vendor
+ * actually exposes (verified against their official docs):
+ *   - **Google** — OAuth2 + Calendar API v3 (REST). Auth = `Bearer <token>`,
+ *     obtained via the authorization-code flow and refreshed on expiry.
+ *   - **Yandex** — CalDAV. Auth = HTTP Basic with the account login + an
+ *     app-specific password. Yandex Calendar does NOT accept an OAuth bearer
+ *     token for CalDAV, so it is deliberately not an OAuth provider here.
  *
- * Which one is used is decided per provider at construction from `config`.
+ * `RecordingCalendarProvider` is an in-memory stand-in used automatically for
+ * any provider that isn't configured, so the demo and tests run with zero setup.
+ * Which adapter is used is decided per provider at construction from `config`.
  */
 export interface CalendarEvent {
   /** Stable id derived from subscriber + subject so re-sync is idempotent. */
@@ -33,16 +35,21 @@ export interface CalendarEvent {
   provider: CalendarProviderName;
 }
 
-/** Auth/context handed to an adapter for a single user's push. */
+/**
+ * Auth/context handed to an adapter for a single user's push. `authHeader` is
+ * the fully-formed `Authorization` value — `Bearer <token>` for Google,
+ * `Basic base64(login:app-password)` for Yandex — so adapters stay agnostic to
+ * how the credential was obtained. `accountLogin` is needed for the Yandex
+ * CalDAV collection path.
+ */
 export interface CalendarAuth {
-  accessToken: string;
-  /** Provider account login/email (Yandex CalDAV path needs it). */
+  authHeader: string;
   accountLogin: string;
 }
 
 export interface CalendarProvider {
   readonly name: CalendarProviderName;
-  /** True for adapters that hit a real external service (need a valid token). */
+  /** True for adapters that hit a real external service (need real credentials). */
   readonly live: boolean;
   upsertEvent(auth: CalendarAuth, event: CalendarEvent): Promise<void>;
   removeEvent(auth: CalendarAuth, uid: string): Promise<void>;
@@ -92,7 +99,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
     return fetch(`${this.cfg.apiBase}${path}`, {
       method,
       headers: {
-        authorization: `Bearer ${auth.accessToken}`,
+        authorization: auth.authHeader,
         ...(body ? { 'content-type': 'application/json' } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
@@ -131,8 +138,19 @@ export class GoogleCalendarProvider implements CalendarProvider {
   }
 }
 
+/** Build the `Authorization: Basic …` value for a Yandex login + app password. */
+export function basicAuthHeader(login: string, appPassword: string): string {
+  return `Basic ${Buffer.from(`${login}:${appPassword}`, 'utf8').toString('base64')}`;
+}
+
 /**
- * Live Yandex Calendar adapter (CalDAV, authenticated with the OAuth bearer).
+ * Live Yandex Calendar adapter (CalDAV, authenticated with HTTP Basic auth
+ * using the account login + an app-specific password).
+ *
+ * Per Yandex's official docs, Yandex Calendar syncs over CalDAV and requires an
+ * app password (Yandex ID → App passwords → Calendar); it does NOT accept an
+ * OAuth bearer token. `auth.authHeader` is therefore a `Basic base64(login:pw)`
+ * value assembled by the sync service from the user's stored credential.
  *
  * Each event is a single-VEVENT .ics resource PUT to a stable href under the
  * user's events collection; the href is derived from the uid so re-sync is
@@ -142,12 +160,38 @@ export class YandexCalendarProvider implements CalendarProvider {
   readonly name = 'yandex' as const;
   readonly live = true;
 
-  constructor(private readonly cfg: YandexOAuthConfig) {}
+  constructor(private readonly cfg: YandexCalDavConfig) {}
+
+  private collectionUrl(accountLogin: string): string {
+    const collection = this.cfg.calendarPathTemplate.replace('{login}', encodeURIComponent(accountLogin));
+    return `${this.cfg.caldavBase}${collection}`;
+  }
 
   private resourceHref(auth: CalendarAuth, uid: string): string {
-    const collection = this.cfg.calendarPathTemplate.replace('{login}', encodeURIComponent(auth.accountLogin));
-    const file = `${encodeURIComponent(uid)}.ics`;
-    return `${this.cfg.caldavBase}${collection}${file}`;
+    return `${this.collectionUrl(auth.accountLogin)}${encodeURIComponent(uid)}.ics`;
+  }
+
+  /**
+   * Validate a login + app password against the CalDAV server before we store
+   * them, by issuing a depth-0 PROPFIND on the user's events collection. Returns
+   * true on 2xx/207 (Multi-Status), false on 401/403 (bad credential). This lets
+   * the connect endpoint reject a wrong app password up front instead of failing
+   * silently later during background sync.
+   */
+  static async verifyCredentials(cfg: YandexCalDavConfig, login: string, appPassword: string): Promise<boolean> {
+    const collection = cfg.calendarPathTemplate.replace('{login}', encodeURIComponent(login));
+    const res = await fetch(`${cfg.caldavBase}${collection}`, {
+      method: 'PROPFIND',
+      headers: {
+        authorization: basicAuthHeader(login, appPassword),
+        depth: '0',
+        'content-type': 'application/xml; charset=utf-8',
+      },
+      body: '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>',
+    });
+    // 207 Multi-Status is the CalDAV success; some servers answer 200. 401/403
+    // mean the credential is wrong. Anything else we treat as unverified.
+    return res.status === 207 || res.ok;
   }
 
   async upsertEvent(auth: CalendarAuth, event: CalendarEvent): Promise<void> {
@@ -155,7 +199,7 @@ export class YandexCalendarProvider implements CalendarProvider {
     const res = await fetch(this.resourceHref(auth, event.uid), {
       method: 'PUT',
       headers: {
-        authorization: `Bearer ${auth.accessToken}`,
+        authorization: auth.authHeader,
         'content-type': 'text/calendar; charset=utf-8',
       },
       body: ics,
@@ -168,7 +212,7 @@ export class YandexCalendarProvider implements CalendarProvider {
   async removeEvent(auth: CalendarAuth, uid: string): Promise<void> {
     const res = await fetch(this.resourceHref(auth, uid), {
       method: 'DELETE',
-      headers: { authorization: `Bearer ${auth.accessToken}` },
+      headers: { authorization: auth.authHeader },
     });
     if (!res.ok && res.status !== 404) {
       throw new Error(`Yandex CalDAV DELETE failed: ${res.status} ${await safeText(res)}`);
@@ -227,17 +271,36 @@ export class CalendarSyncService {
   }
 
   /**
-   * Resolve a usable auth context for a live provider, refreshing the access
-   * token if it's expired. Returns null when the provider is a recording stub
-   * (no auth needed) or the user hasn't completed OAuth for it.
+   * Resolve a usable auth context for a live provider. Returns null when the
+   * user has no stored credential for it (so sync skips it silently).
+   *
+   * The two providers differ:
+   *   - **Google**: the stored token is an OAuth token; refresh it if expired
+   *     and send `Bearer <access token>`.
+   *   - **Yandex**: the stored "token" is an app password (tokenType 'Basic',
+   *     accessToken = app password, accountLogin = login); send Basic auth. No
+   *     refresh — app passwords don't expire until revoked.
+   *
+   * A recording (non-live) provider needs no auth.
    */
   private async authFor(userId: string, provider: CalendarProviderName): Promise<CalendarAuth | null> {
-    if (!this.providers[provider].live) return { accessToken: '', accountLogin: '' };
-    const token = this.deps.repo.getCalendarToken(userId, provider);
-    if (!token) return null;
-    const accessToken = await this.deps.oauth.getValidAccessToken(userId, provider, token);
+    if (!this.providers[provider].live) return { authHeader: '', accountLogin: '' };
+    const cred = this.deps.repo.getCalendarToken(userId, provider);
+    if (!cred) return null;
+
+    if (provider === 'yandex') {
+      // accessToken holds the app password; accountLogin holds the Yandex login.
+      if (!cred.accessToken || !cred.accountLogin) return null;
+      return {
+        authHeader: basicAuthHeader(cred.accountLogin, cred.accessToken),
+        accountLogin: cred.accountLogin,
+      };
+    }
+
+    // Google (OAuth): refresh on expiry, then Bearer.
+    const accessToken = await this.deps.oauth.getValidAccessToken(userId, provider, cred);
     if (!accessToken) return null;
-    return { accessToken, accountLogin: token.accountLogin };
+    return { authHeader: `Bearer ${accessToken}`, accountLogin: cred.accountLogin };
   }
 
   /**

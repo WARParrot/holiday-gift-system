@@ -226,6 +226,9 @@ function CalendarTab() {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<CalendarProviderName | null>(null);
+  // When Yandex signals CalDAV mode, we reveal an inline login + app-password
+  // form instead of redirecting (Yandex Calendar uses Basic auth, not OAuth).
+  const [yandexForm, setYandexForm] = useState<{ login: string; appPassword: string } | null>(null);
 
   async function load() {
     const r = await api.calendarConnections();
@@ -259,11 +262,34 @@ function CalendarTab() {
         window.location.href = res.authorizeUrl;
         return;
       }
+      if (res.mode === 'caldav') {
+        // Yandex: reveal the login + app-password form (Basic-auth CalDAV).
+        setYandexForm({ login: '', appPassword: '' });
+        return;
+      }
       // Demo mode: connected server-side immediately.
       setStatus(`Connected ${p} (demo). Synced ${res.eventsSynced} event(s) from your subscriptions.`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Connect failed');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function submitYandex(e: React.FormEvent) {
+    e.preventDefault();
+    if (!yandexForm) return;
+    setError(null);
+    setStatus(null);
+    setBusy('yandex');
+    try {
+      const res = await api.connectYandexCalDav(yandexForm.login.trim(), yandexForm.appPassword.trim());
+      setStatus(`Connected Yandex. Synced ${res.eventsSynced} event(s) from your subscriptions.`);
+      setYandexForm(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Yandex connect failed');
     } finally {
       setBusy(null);
     }
@@ -285,8 +311,9 @@ function CalendarTab() {
         </p>
         {anyDemo && (
           <p className="mt-1 text-[11px] font-medium text-amber-600">
-            A provider shown as “demo” has no server-side OAuth credentials configured, so its sync is simulated
-            (recorded server-side, nothing written to a real external calendar). Configure credentials to enable live sync.
+            A provider shown as “demo” isn't configured for live sync on this server, so its sync is simulated
+            (recorded server-side, nothing written to a real external calendar). Google uses OAuth; Yandex uses a
+            CalDAV app password.
           </p>
         )}
       </div>
@@ -314,9 +341,45 @@ function CalendarTab() {
               </div>
             ) : (
               <div className="mt-2">
-                <button className="btn-primary text-xs" disabled={busy === p.id} onClick={() => connect(p.id)}>
-                  {busy === p.id ? 'Connecting…' : `Connect ${p.label}`}
-                </button>
+                {p.id === 'yandex' && yandexForm ? (
+                  <form onSubmit={submitYandex} className="space-y-2">
+                    <p className="text-[11px] text-slate-500">
+                      Yandex Calendar syncs over CalDAV, which uses an app password (not your main password). Create one at
+                      Yandex ID → Security → App passwords → <span className="font-medium">Calendar</span>, then enter it below.
+                    </p>
+                    <input
+                      className="input"
+                      placeholder="Yandex login or email"
+                      autoComplete="username"
+                      value={yandexForm.login}
+                      onChange={(e) => setYandexForm({ ...yandexForm, login: e.target.value })}
+                    />
+                    <input
+                      className="input"
+                      type="password"
+                      placeholder="App password"
+                      autoComplete="off"
+                      value={yandexForm.appPassword}
+                      onChange={(e) => setYandexForm({ ...yandexForm, appPassword: e.target.value })}
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        className="btn-primary text-xs"
+                        type="submit"
+                        disabled={busy === 'yandex' || !yandexForm.login.trim() || !yandexForm.appPassword.trim()}
+                      >
+                        {busy === 'yandex' ? 'Connecting…' : 'Connect'}
+                      </button>
+                      <button className="btn-ghost text-xs" type="button" onClick={() => setYandexForm(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <button className="btn-primary text-xs" disabled={busy === p.id} onClick={() => connect(p.id)}>
+                    {busy === p.id ? 'Connecting…' : `Connect ${p.label}`}
+                  </button>
+                )}
               </div>
             )}
           </div>

@@ -104,3 +104,14 @@ export const adminImportSchema = z.object({
   /** Raw payload: a JSON array (as string) or CSV text. */
   payload: z.string().min(1),
 });
+
+/**
+ * Yandex Calendar connect credentials. Yandex CalDAV uses HTTP Basic auth with
+ * the account login + an app-specific password (NOT an OAuth token), so the
+ * user supplies both directly. `login` is the full Yandex login/email; the app
+ * password is a 16-ish char token generated in Yandex ID → App passwords.
+ */
+export const yandexCalDavConnectSchema = z.object({
+  login: z.string().min(1).max(190),
+  appPassword: z.string().min(1).max(190),
+});

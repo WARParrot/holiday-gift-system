@@ -137,14 +137,24 @@ export const api = {
   // calendar connections
   calendarConnections: () =>
     request<{ connections: Array<CalendarConnection & { live: boolean }> }>('/calendar/connections'),
-  // Begin the connect flow. Live providers return an authorizeUrl to redirect
-  // the top-level window to the provider's OAuth consent screen; demo providers
-  // (no server-side credentials) connect immediately and report events synced.
+  // Begin the connect flow. The mode tells the SPA what to do next:
+  //  - 'oauth' (Google): redirect the top window to authorizeUrl (consent screen);
+  //  - 'caldav' (Yandex): collect login + app password and POST them (see below),
+  //    because Yandex Calendar uses CalDAV Basic auth, not OAuth;
+  //  - 'demo' (provider not configured live): already connected server-side.
   startCalendarConnect: (provider: CalendarProviderName) =>
     request<
       | { mode: 'oauth'; authorizeUrl: string }
+      | { mode: 'caldav' }
       | { mode: 'demo'; connected: true; eventsSynced: number }
     >(`/calendar/oauth/${provider}/start`),
+  // Connect Yandex with a login + app-specific password (CalDAV Basic auth).
+  // The server verifies the credential against Yandex before storing it.
+  connectYandexCalDav: (login: string, appPassword: string) =>
+    request<{ mode: 'caldav'; connected: true; eventsSynced: number }>(
+      '/calendar/connections/yandex/caldav',
+      { method: 'POST', body: JSON.stringify({ login, appPassword }) },
+    ),
   disconnectCalendar: (provider: CalendarProviderName) =>
     request<{ ok: true }>(`/calendar/connections/${provider}`, { method: 'DELETE' }),
 
