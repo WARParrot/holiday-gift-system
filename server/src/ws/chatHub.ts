@@ -128,23 +128,31 @@ export class ChatHub {
     // hot path (setImmediate) and its per-recipient inserts are collapsed into
     // a single transaction — one commit/fsync instead of one per subscriber.
     setImmediate(() => {
-      const room = this.repo.getRoomById(message.roomId);
-      if (!room) return;
-      const recipients = this.repo
-        .subscriberIdsForSubject(room.subjectId)
-        .filter((userId) => userId !== message.authorId);
-      if (recipients.length === 0) return;
-      this.repo.transaction(() => {
-        for (const userId of recipients) {
-          this.notifications.push(
-            userId,
-            'CHAT_MESSAGE',
-            `New message in ${room.subjectName}'s celebration chat`,
-            `${message.authorName}: ${message.body.slice(0, 80)}`,
-            { roomId: room.id, messageId: message.id },
-          );
-        }
-      });
+      // This runs detached from the send flow, so any throw here would surface
+      // as an uncaughtException and could crash the process. The message is
+      // already persisted and delivered, so a failed fan-out must never take
+      // the server down — swallow and log it instead.
+      try {
+        const room = this.repo.getRoomById(message.roomId);
+        if (!room) return;
+        const recipients = this.repo
+          .subscriberIdsForSubject(room.subjectId)
+          .filter((userId) => userId !== message.authorId);
+        if (recipients.length === 0) return;
+        this.repo.transaction(() => {
+          for (const userId of recipients) {
+            this.notifications.push(
+              userId,
+              'CHAT_MESSAGE',
+              `New message in ${room.subjectName}'s celebration chat`,
+              `${message.authorName}: ${message.body.slice(0, 80)}`,
+              { roomId: room.id, messageId: message.id },
+            );
+          }
+        });
+      } catch (err) {
+        console.error('Chat notification fan-out failed for message', message.id, err);
+      }
     });
   }
 }
