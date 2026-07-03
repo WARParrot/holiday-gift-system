@@ -1,32 +1,82 @@
-# React + TypeScript + Vite
+# Birthday Celebration Management System (BCMS)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+A web service that helps people **never miss a friend's birthday**, coordinate
+group celebrations in a **secret chat the birthday person can't see**, manage
+**wishlists**, run **crowdfunding pools**, and sync events to external
+calendars.
 
-Currently, two official plugins are available:
+This repository is a **monorepo** with two packages:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+| Package  | Stack                                             | Purpose                              |
+|----------|---------------------------------------------------|--------------------------------------|
+| `server` | Node + Express + TypeScript + SQLite + `ws`       | REST API, WebSocket chat, schedulers |
+| `web`    | React + TypeScript + Vite + Zustand + Tailwind    | Responsive mobile-first web client   |
 
-## React Compiler
+> Full internal design documentation lives in [`docs/DESIGN.md`](docs/DESIGN.md).
+> Read it first — it explains *why* every subsystem is built the way it is,
+> including the secret-chat exclusion model and the crowdfunding pseudo-bank.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the Oxlint configuration
+## Quick start
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+Requires Node.js 20+.
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+# 1. Backend
+cd server
+npm install
+npm run migrate      # create + seed the SQLite database
+npm run dev          # http://localhost:4000  (REST + WS on same port)
+
+# 2. Frontend (separate terminal)
+cd web
+npm install
+npm run dev          # http://localhost:5173  (proxies /api and /ws to :4000)
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Seed logins (password is `password` for all):
+
+| Email                | Role  | Notes                                        |
+|----------------------|-------|----------------------------------------------|
+| `alice@example.com`  | USER  | Subscribed to Carol + the Volleyball Team    |
+| `bob@example.com`    | USER  | Member of Volleyball Team                    |
+| `carol@example.com`  | USER  | Birthday **tomorrow** (fires a reminder)     |
+| `dave@example.com`   | USER  | Birthday **in 7 days** (fires a reminder)    |
+| `erin@example.com`   | USER  | Birthday **in 14 days** (auto-opens a pool)  |
+| `admin@example.com`  | ADMIN | Access to the back-office UI                 |
+
+> Carol/Dave/Erin birthdates are seeded relative to *today* so the reminder and
+> crowdfunding schedulers have something to fire on immediately. Trigger a tick
+> manually from the Subscriptions page ("Run reminder scheduler") or
+> `POST /api/notifications/run-scheduler`.
+
+## Production: single-process mode
+
+Build both packages, then serve the SPA and API from one Node process:
+
+```bash
+cd web && npm run build          # emits web/dist
+cd ../server && npm run build    # emits server/dist
+cd server && npm run migrate     # seed (once)
+npm start                        # auto-detects ../web/dist and serves it on :4000
+```
+
+The server auto-detects `../web/dist`; override with `WEB_DIST=/abs/path`. In
+this mode `/api/*` and `/ws` are served alongside the static SPA (with a
+client-side-routing fallback), so no proxy is needed.
+
+## Verification
+
+```bash
+cd server && npm run typecheck && npm test && npm run build
+cd web    && npm run typecheck && npm run build
+```
+
+## Repository layout
+
+```
+server/   REST API, WebSocket server, reminder + crowdfunding schedulers
+web/      React SPA implementing the 4 core user scenarios
+docs/     DESIGN.md — full internal specification for the dev team
+```
