@@ -108,6 +108,21 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Explicit positive-authorization list for a secret chat. A row here is the
+-- ONLY thing that grants read/post access to a room: "who is allowed" is this
+-- allowlist, never "everyone who isn't the subject". The subject is excluded by
+-- construction (they can never become eligible to join their own celebration).
+--   role   — ORGANIZER (first to open the celebration) or PARTICIPANT
+--   source — how they became eligible: a FRIEND subscription or a shared GROUP
+CREATE TABLE IF NOT EXISTS chat_participants (
+  room_id    TEXT NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role       TEXT NOT NULL DEFAULT 'PARTICIPANT' CHECK (role IN ('ORGANIZER','PARTICIPANT')),
+  source     TEXT NOT NULL DEFAULT 'FRIEND' CHECK (source IN ('FRIEND','GROUP')),
+  joined_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (room_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS crowdfunding_pools (
   id             TEXT PRIMARY KEY,
   subject_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -134,6 +149,7 @@ CREATE INDEX IF NOT EXISTS idx_wishlist_owner ON wishlist_items(owner_id);
 CREATE INDEX IF NOT EXISTS idx_subs_subscriber ON subscriptions(subscriber_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_room ON chat_messages(room_id);
+CREATE INDEX IF NOT EXISTS idx_chat_participants_user ON chat_participants(user_id);
 CREATE INDEX IF NOT EXISTS idx_contrib_pool ON pool_contributions(pool_id);
 CREATE INDEX IF NOT EXISTS idx_wallet_tx_user ON wallet_transactions(user_id);
 `;

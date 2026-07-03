@@ -14,7 +14,7 @@ import type { Subscription, UserRow } from '../types/domain.js';
 export function subscriptionRoutes(ctx: AppContext): Router {
   const router = Router();
   const { repo, config, calendar } = ctx;
-  router.use(requireAuth(config));
+  router.use(requireAuth(config, repo));
 
   // GET /api/subscriptions — my subscriptions
   router.get('/', (req, res) => {

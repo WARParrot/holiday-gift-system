@@ -18,7 +18,7 @@ import { calendarConnectSchema } from './schemas.js';
 export function calendarRoutes(ctx: AppContext): Router {
   const router = Router();
   const { repo, config, calendar } = ctx;
-  router.use(requireAuth(config));
+  router.use(requireAuth(config, repo));
 
   router.get('/connections', (req, res) => {
     res.json({ connections: repo.listCalendarConnections(req.principal!.userId) });

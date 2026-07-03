@@ -122,6 +122,19 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+export type ParticipantRole = 'ORGANIZER' | 'PARTICIPANT';
+export type ParticipantSource = 'FRIEND' | 'GROUP';
+
+export interface CelebrationParticipant {
+  roomId: string;
+  userId: string;
+  role: ParticipantRole;
+  source: ParticipantSource;
+  joinedAt: string;
+  fullName: string;
+  avatarUrl: string | null;
+}
+
 export interface CrowdfundingPool {
   id: string;
   subjectId: string;
@@ -148,7 +161,9 @@ export interface FriendCard {
   daysUntilBirthday: number;
   groups: Group[];
   wishlist: WishlistItem[];
-  secretChat: { roomId: string; visible: true } | { visible: false };
+  secretChat:
+    | { visible: true; roomId: string }
+    | { visible: false; eligible: boolean };
   isSelf: boolean;
 }
 

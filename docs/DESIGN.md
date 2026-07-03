@@ -327,3 +327,119 @@ admin negative adjust, calendar connect/disconnect upsert, and admin pool
 finance updates. `test/smoke.mts` gained live checks for top-up, over-balance
 refusal, balance-debiting contribution, and calendar connect.
 
+---
+
+## 14. Version 1.2 — security-hardening / review-fix pass
+
+This release closes the findings from an external code review of the 1.1 build.
+The headline change reworks the secret-chat authorization from a *negative* rule
+into an explicit *positive* model; the rest hardens auth, transport, and
+auditing. Every change is covered by tests (`test/http.test.ts`,
+`test/chatAccess.test.ts`, `test/dates.test.ts`).
+
+### 14.1 Positive authorization for the secret chat (supersedes §6)
+
+The 1.1 rule was purely negative: `canAccessSubjectChat` allowed *everyone who
+was not the subject*. There was no `chat_participants` concept, so "who is
+allowed" was un-enumerable. 1.2 introduces an explicit allowlist:
+
+```
+chat_participants(room_id, user_id, role, source, joined_at)
+  role   = ORGANIZER | PARTICIPANT
+  source = FRIEND | GROUP        -- how the user became eligible
+```
+
+`services/chatAccess.ts` now models two stages:
+
+```
+checkEligibility(repo, subjectId, requesterId)
+  → may this user JOIN?  eligible iff (not the subject) AND
+    repo.subscriptionSourceFor(requesterId, subjectId) is FRIEND or GROUP
+canAccessRoom(repo, roomId, requesterId)
+  → may this user READ/POST now?  allowed iff room exists AND
+    (not the subject) AND repo.isParticipant(roomId, requesterId)
+```
+
+Consequences:
+- **Joining is an explicit `POST /api/chat/subject/:id/room/join`.** It checks
+  eligibility, lazily creates the room on first join, and records the caller as
+  a participant (first joiner = ORGANIZER). This is the *only* place a room /
+  grant is materialised.
+- **The old GET-side room auto-creation is removed.** `GET /users/:id/card` no
+  longer mutates state; it reports `secretChat.visible` (already a participant)
+  or `{ visible:false, eligible }` so the client can offer a "Join" action.
+- **A stranger with no subscription relationship is denied** (`NOT_ELIGIBLE` →
+  403), not silently allowed. The subject is still denied unconditionally
+  (`IS_SUBJECT`). This subsumes the 1.1 "subscriptions are overloaded" remark:
+  eligibility *is* the subscription relationship.
+
+> The §6 rule "never bypass `chatAccess`" still holds — the functions changed,
+> the discipline did not. Both transports (REST + WS) funnel through
+> `canAccessRoom`, and the WS hub additionally re-validates the JWT subject
+> against the DB on `auth`.
+
+### 14.2 Auth hardening
+
+- `config.ts` **hard-fails on boot** in `NODE_ENV=production` if `JWT_SECRET` is
+  unset / equals the dev default — no more accidental forge-any-token prod boot.
+- `middleware/auth.ts` now takes the repo and **re-validates every request
+  against the DB**: a token for a deleted account is rejected (401) immediately
+  instead of surviving until the 7-day expiry (the team-reported
+  "delete-then-still-authenticated" bug), and the role is read from the DB, so
+  admin grant/revoke takes effect at once rather than being frozen in the token.
+
+### 14.3 Transport hardening
+
+- **Rate limiting** (`middleware/rateLimit.ts`): a dependency-free per-IP
+  fixed-window limiter — a general cap on `/api/` plus a stricter cap on
+  `/api/auth`. Tunable via `RATE_LIMIT_*` env vars.
+- **CORS**: the wide-open `cors()` is replaced by an allowlist built from
+  `CORS_ORIGINS` (empty = same-origin only).
+- **WebSocket frames**: every inbound frame is zod-validated (discriminated
+  union on `type`, string bounds, 4000-char message cap) and the socket payload
+  size is bounded, so malformed / oversized frames never reach the DB.
+
+### 14.4 REST/WS notification parity
+
+The REST send path (`POST …/messages`) previously broadcast to WS clients but
+skipped subscriber notifications. Both paths now call a single
+`ChatHub.onMessagePosted(message)` that clears the author's own counter and fans
+out subscriber notifications — behavioural parity between transports.
+
+### 14.5 Auditable admin pool edits
+
+`repo.updatePoolFinance(..., adminId)` no longer writes `current_balance`
+directly. Target/status are metadata (set directly); a balance change is applied
+as a reconciling row in `pool_contributions` (attributed to the admin), so a
+pool's balance always equals the sum of its contribution trail. (User-balance
+admin edits already went through the `ADMIN_ADJUST` wallet ledger — that was
+correct and is unchanged; this fix targets pools only.)
+
+### 14.6 Message pagination
+
+`repo.listMessages(roomId, { limit, before })` replaces the fixed 500-row cap.
+The cursor is keyed on the monotonic `rowid` (insertion order), **not**
+`created_at` — the latter has only second resolution and would drop/duplicate
+rows within a burst. `GET …/messages?limit=&before=<messageId>` returns a
+`nextBefore` cursor for the previous (older) page.
+
+### 14.7 Louder demo labeling
+
+The mock bank and the simulated (no real OAuth) Google/Yandex calendar
+integration are now called out explicitly in the profile UI, so their demo
+nature isn't mistaken for a live integration.
+
+### 14.8 New tests
+
+- `test/http.test.ts` — HTTP-layer integration (real Express app): stranger 403
+  / eligible-friend 201 join, no GET-side room creation, deleted-user token
+  rejection, DB-authoritative role, REST/WS notify parity, message pagination.
+- `test/chatAccess.test.ts` — rewritten for the positive model: subject hard
+  exclusion, participant-grant requirement, stranger `NOT_ELIGIBLE`, GROUP-source
+  eligibility, `ROOM_NOT_FOUND`.
+- `test/dates.test.ts` — leap-year (Feb-29) countdown edge cases.
+- `test/wallet.test.ts` — updated to assert the pool-edit reconciling ledger row.
+
+Total: **29 tests** (up from 9), plus strict typecheck and build on both
+packages, verified from a clean extract of the delivered zip.
+

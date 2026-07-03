@@ -4,21 +4,28 @@ import type { AppContext } from './context.js';
 import { requireAuth } from '../middleware/auth.js';
 import { parseBody } from '../util/validate.js';
 import { contributeSchema } from './schemas.js';
-import { canAccessRoom, canAccessSubjectChat } from '../services/chatAccess.js';
+import { canAccessRoom, checkEligibility } from '../services/chatAccess.js';
 import { processMockCharge } from '../services/mockBank.js';
 
 /**
- * Secret chat REST surface (history + REST-send fallback) and the crowdfunding
- * "pseudo-bank" pool endpoints. All room access flows through canAccessRoom so
- * the subject is excluded here exactly as in the WebSocket hub.
+ * Secret chat REST surface (join + history + REST-send fallback) and the
+ * crowdfunding "pseudo-bank" pool endpoints.
+ *
+ * Authorization is a positive model: every room-scoped endpoint flows through
+ * `canAccessRoom`, which requires an explicit participant grant (not merely
+ * "you aren't the subject"). Materialising a room / participant grant only
+ * happens through the explicit POST join below — GET handlers never mutate.
  */
 export function chatRoutes(ctx: AppContext): Router {
   const router = Router();
   const { repo, config, notifications } = ctx;
-  router.use(requireAuth(config));
+  router.use(requireAuth(config, repo));
 
-  // GET /api/chat/subject/:subjectId/room — resolve (or create) a subject's room
-  router.get('/subject/:subjectId/room', (req, res) => {
+  // POST /api/chat/subject/:subjectId/room/join — explicitly join (or open) a
+  // subject's celebration chat. Eligibility (a subscription relationship to the
+  // subject, and not being the subject) is required; on success the caller is
+  // recorded as a participant. This is the ONLY place a room/grant is created.
+  router.post('/subject/:subjectId/room/join', (req, res) => {
     const requesterId = req.principal!.userId;
     const subjectId = req.params.subjectId;
     const subject = repo.findUserById(subjectId);
@@ -26,17 +33,44 @@ export function chatRoutes(ctx: AppContext): Router {
       res.status(404).json({ error: 'Subject not found' });
       return;
     }
-    const access = canAccessSubjectChat(subjectId, requesterId);
-    if (!access.allowed) {
-      // The birthday person gets a hard 403 — they must not even learn the room exists.
+    const eligibility = checkEligibility(repo, subjectId, requesterId);
+    if (!eligibility.eligible) {
+      // The birthday person (or a stranger with no relationship) gets a hard
+      // 403 — they must not learn whether the room exists.
       res.status(403).json({ error: 'This chat is not available to you' });
       return;
     }
-    const room = repo.getOrCreateRoomForSubject(subjectId, randomUUID());
-    res.json({ room, pool: repo.getPoolByRoom(room.id) ?? null });
+    const existingRoom = repo.getRoomBySubject(subjectId);
+    const room = existingRoom ?? repo.getOrCreateRoomForSubject(subjectId, randomUUID());
+    // First joiner opens the room and is its organizer; later joiners are
+    // regular participants. Idempotent — re-joining is a no-op.
+    const role = existingRoom || repo.listParticipants(room.id).length > 0 ? 'PARTICIPANT' : 'ORGANIZER';
+    repo.addParticipant(room.id, requesterId, role, eligibility.source ?? 'FRIEND');
+    res.status(201).json({
+      room,
+      pool: repo.getPoolByRoom(room.id) ?? null,
+      participants: repo.listParticipants(room.id),
+    });
   });
 
-  // GET /api/chat/rooms/:roomId/messages — message history
+  // GET /api/chat/rooms/:roomId — room metadata + participants (participants only)
+  router.get('/rooms/:roomId', (req, res) => {
+    const access = canAccessRoom(repo, req.params.roomId, req.principal!.userId);
+    if (!access.allowed) {
+      res.status(access.reason === 'ROOM_NOT_FOUND' ? 404 : 403).json({
+        error: access.reason === 'ROOM_NOT_FOUND' ? 'Room not found' : 'This chat is not available to you',
+      });
+      return;
+    }
+    res.json({
+      room: repo.getRoomById(req.params.roomId),
+      participants: repo.listParticipants(req.params.roomId),
+      pool: repo.getPoolByRoom(req.params.roomId) ?? null,
+    });
+  });
+
+  // GET /api/chat/rooms/:roomId/messages — message history (paginated).
+  // Query: ?limit=N (1..200, default 100), ?before=<ISO cursor> for older pages.
   router.get('/rooms/:roomId/messages', (req, res) => {
     const access = canAccessRoom(repo, req.params.roomId, req.principal!.userId);
     if (!access.allowed) {
@@ -45,7 +79,14 @@ export function chatRoutes(ctx: AppContext): Router {
       });
       return;
     }
-    res.json({ messages: repo.listMessages(req.params.roomId) });
+    const limitRaw = Number(req.query.limit);
+    const limit = Number.isFinite(limitRaw) ? limitRaw : undefined;
+    const before = typeof req.query.before === 'string' ? req.query.before : undefined;
+    const messages = repo.listMessages(req.params.roomId, { limit, before });
+    // `nextBefore` is the cursor (oldest message's id) for the previous (older)
+    // page; null when the page wasn't full (no older messages remain).
+    const nextBefore = messages.length && limit && messages.length >= limit ? messages[0].id : null;
+    res.json({ messages, nextBefore });
   });
 
   // POST /api/chat/rooms/:roomId/messages — REST fallback for sending (WS preferred)
@@ -62,13 +103,21 @@ export function chatRoutes(ctx: AppContext): Router {
       res.status(400).json({ error: 'Message body is required' });
       return;
     }
+    if (body.length > 4000) {
+      res.status(400).json({ error: 'Message exceeds the 4000-character limit' });
+      return;
+    }
     const message = repo.addMessage({
       id: randomUUID(),
       roomId: req.params.roomId,
       authorId: req.principal!.userId,
       body,
     });
+    // Behavioural parity with the WS path: broadcast to live clients, clear the
+    // author's own chat counter for this room, and fan out subscriber
+    // notifications. Previously REST-sent messages skipped notifications.
     ctx.hub.current?.broadcastToRoom(req.params.roomId, { type: 'message', message });
+    ctx.hub.current?.onMessagePosted(message);
     res.status(201).json({ message });
   });
 

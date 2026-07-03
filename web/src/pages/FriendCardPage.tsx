@@ -46,6 +46,8 @@ export function FriendCardPage() {
       await api.subscribe({ kind: 'FRIEND', targetId: userId, calendarSync });
       setSubscribed(true);
     }
+    // Refresh the card so secret-chat eligibility reflects the new state.
+    load();
   }
 
   if (error) return <ErrorNote message={error} />;
@@ -103,14 +105,51 @@ export function FriendCardPage() {
         ) : (
           <div className="card">
             <h2 className="font-semibold">Secret coordination chat</h2>
-            <p className="mt-2 text-sm text-slate-500">
-              {card.isSelf
-                ? 'This is your own card — the celebration chat about you is hidden from you by design. 🤫'
-                : 'Chat is unavailable.'}
-            </p>
+            {card.isSelf ? (
+              <p className="mt-2 text-sm text-slate-500">
+                This is your own card — the celebration chat about you is hidden from you by design. 🤫
+              </p>
+            ) : card.secretChat.eligible ? (
+              <JoinSecretChat subjectId={card.user.id} onJoined={load} />
+            ) : (
+              <p className="mt-2 text-sm text-slate-500">
+                Subscribe to {card.user.fullName}'s reminders to join the secret planning chat.
+              </p>
+            )}
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function JoinSecretChat({ subjectId, onJoined }: { subjectId: string; onJoined: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function join() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.joinSubjectRoom(subjectId);
+      onJoined();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not join the chat');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-2 space-y-2">
+      <p className="text-sm text-slate-500">
+        You're eligible to help plan this celebration. Join the secret chat to coordinate — the birthday person can
+        never see it. 🤫
+      </p>
+      <button className="btn-primary" onClick={join} disabled={busy}>
+        {busy ? 'Joining…' : 'Join secret chat'}
+      </button>
+      {error && <p className="text-sm text-rose-600">{error}</p>}
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import type { Database } from 'better-sqlite3';
+import { randomUUID } from 'node:crypto';
 import type {
   CalendarConnection,
   CalendarProviderName,
+  CelebrationParticipantView,
   ChatMessage,
   ChatRoom,
   CrowdfundingPool,
@@ -9,6 +11,8 @@ import type {
   GroupMemberView,
   GroupWithMeta,
   Notification,
+  ParticipantRole,
+  ParticipantSource,
   PoolContribution,
   PublicUser,
   Role,
@@ -315,6 +319,31 @@ export class Repository {
     return rows.map((r) => this.mapSubscription(r));
   }
 
+  /**
+   * How (if at all) `subscriberId` is subscribed to `subjectId`. Returns the
+   * source ('FRIEND' for a direct friend subscription, 'GROUP' for a shared
+   * group subscription) or null when there is no relationship. Used to decide
+   * chat-join eligibility under the positive-authorization model.
+   */
+  subscriptionSourceFor(subscriberId: string, subjectId: string): ParticipantSource | null {
+    if (subscriberId === subjectId) return null;
+    const direct = this.db
+      .prepare(
+        "SELECT 1 FROM subscriptions WHERE subscriber_id = ? AND kind = 'FRIEND' AND target_id = ?",
+      )
+      .get(subscriberId, subjectId);
+    if (direct) return 'FRIEND';
+    const viaGroup = this.db
+      .prepare(
+        `SELECT 1 FROM subscriptions s
+         JOIN group_members m ON m.group_id = s.target_id
+         WHERE s.subscriber_id = ? AND s.kind = 'GROUP' AND m.user_id = ? LIMIT 1`,
+      )
+      .get(subscriberId, subjectId);
+    if (viaGroup) return 'GROUP';
+    return null;
+  }
+
   /** All subscriber ids that will be notified about a given subject user. */
   subscriberIdsForSubject(subjectId: string): string[] {
     const direct = this.db
@@ -433,6 +462,14 @@ export class Repository {
     return r ? this.mapRoom(r) : undefined;
   }
 
+  /** Look up an existing room for a subject without creating one. */
+  getRoomBySubject(subjectId: string): ChatRoom | undefined {
+    const r = this.db
+      .prepare('SELECT * FROM chat_rooms WHERE subject_id = ?')
+      .get(subjectId) as Record<string, unknown> | undefined;
+    return r ? this.mapRoom(r) : undefined;
+  }
+
   addMessage(msg: { id: string; roomId: string; authorId: string; body: string }): ChatMessage {
     this.db
       .prepare(
@@ -452,15 +489,96 @@ export class Repository {
     return r ? this.mapMessage(r) : undefined;
   }
 
-  listMessages(roomId: string): ChatMessage[] {
+  listMessages(roomId: string, opts: { limit?: number; before?: string } = {}): ChatMessage[] {
+    // Cursor pagination keyed on the monotonic rowid (insertion order ==
+    // chronological order), NOT on created_at — created_at has only
+    // second-resolution and ties within a burst would drop or duplicate rows.
+    // `before` is a message id from an earlier page; we page rows with a
+    // smaller rowid (i.e. strictly older). We fetch newest-first for the cursor
+    // to work, then return the page in chronological (ASC) order.
+    const limit = Math.min(Math.max(opts.limit ?? 100, 1), 200);
+    let beforeRowid: number | null = null;
+    if (opts.before) {
+      const cursorRow = this.db
+        .prepare('SELECT rowid AS rid FROM chat_messages WHERE id = ? AND room_id = ?')
+        .get(opts.before, roomId) as { rid: number } | undefined;
+      // Unknown cursor → treat as "from the newest" rather than leaking rows.
+      if (!cursorRow) return [];
+      beforeRowid = cursorRow.rid;
+    }
+    const rows = (
+      beforeRowid !== null
+        ? this.db
+            .prepare(
+              `SELECT m.id, m.room_id, m.author_id, m.body, m.created_at, u.full_name AS author_name
+               FROM chat_messages m JOIN users u ON u.id = m.author_id
+               WHERE m.room_id = ? AND m.rowid < ?
+               ORDER BY m.rowid DESC LIMIT ?`,
+            )
+            .all(roomId, beforeRowid, limit)
+        : this.db
+            .prepare(
+              `SELECT m.id, m.room_id, m.author_id, m.body, m.created_at, u.full_name AS author_name
+               FROM chat_messages m JOIN users u ON u.id = m.author_id
+               WHERE m.room_id = ?
+               ORDER BY m.rowid DESC LIMIT ?`,
+            )
+            .all(roomId, limit)
+    ) as Record<string, unknown>[];
+    return rows.map((r) => this.mapMessage(r)).reverse();
+  }
+
+  // ---- chat participants (positive authorization) -----------------------
+  /**
+   * Add a user to a room's participant allowlist (idempotent). This is the
+   * single grant that authorizes read/post access. `role` defaults to
+   * PARTICIPANT; the first organizer to open a room is recorded as ORGANIZER.
+   */
+  addParticipant(
+    roomId: string,
+    userId: string,
+    role: ParticipantRole = 'PARTICIPANT',
+    source: ParticipantSource = 'FRIEND',
+  ): void {
+    this.db
+      .prepare(
+        `INSERT INTO chat_participants (room_id, user_id, role, source, joined_at)
+         VALUES (?, ?, ?, ?, datetime('now'))
+         ON CONFLICT(room_id, user_id) DO NOTHING`,
+      )
+      .run(roomId, userId, role, source);
+  }
+
+  removeParticipant(roomId: string, userId: string): void {
+    this.db.prepare('DELETE FROM chat_participants WHERE room_id = ? AND user_id = ?').run(roomId, userId);
+  }
+
+  /** True iff the user holds an explicit participant grant for the room. */
+  isParticipant(roomId: string, userId: string): boolean {
+    const row = this.db
+      .prepare('SELECT 1 FROM chat_participants WHERE room_id = ? AND user_id = ?')
+      .get(roomId, userId);
+    return Boolean(row);
+  }
+
+  listParticipants(roomId: string): CelebrationParticipantView[] {
     const rows = this.db
       .prepare(
-        `SELECT m.id, m.room_id, m.author_id, m.body, m.created_at, u.full_name AS author_name
-         FROM chat_messages m JOIN users u ON u.id = m.author_id
-         WHERE m.room_id = ? ORDER BY m.created_at ASC LIMIT 500`,
+        `SELECT p.room_id, p.user_id, p.role, p.source, p.joined_at,
+                u.full_name AS full_name, u.avatar_url AS avatar_url
+         FROM chat_participants p JOIN users u ON u.id = p.user_id
+         WHERE p.room_id = ? ORDER BY p.joined_at ASC`,
       )
       .all(roomId) as Record<string, unknown>[];
-    return rows.map((r) => this.mapMessage(r));
+    return rows.map((r) => ({
+      roomId: r.room_id as string,
+      userId: r.user_id as string,
+      role: r.role as ParticipantRole,
+      source: r.source as ParticipantSource,
+      joinedAt: r.joined_at as string,
+      fullName: r.full_name as string,
+      avatarUrl: (r.avatar_url as string) ?? null,
+    }));
   }
 
   // ---- crowdfunding ------------------------------------------------------
@@ -513,14 +631,40 @@ export class Repository {
     return rows.map((r) => this.mapPool(r));
   }
 
-  /** Admin: directly set a pool's monetary fields / status. */
+  /**
+   * Admin: update a pool's target/status, and (when the balance changes) record
+   * a reconciling ADMIN adjustment in `pool_contributions` so the pool balance
+   * always equals the sum of its contribution trail — no silent direct writes.
+   * `adminId` is attributed as the contributor of the adjustment row.
+   */
   updatePoolFinance(
     poolId: string,
     fields: { targetAmount: number; currentBalance: number; status: CrowdfundingPool['status'] },
+    adminId: string,
   ): CrowdfundingPool | undefined {
-    this.db
-      .prepare('UPDATE crowdfunding_pools SET target_amount = ?, current_balance = ?, status = ? WHERE id = ?')
-      .run(fields.targetAmount, fields.currentBalance, fields.status, poolId);
+    const tx = this.db.transaction(() => {
+      const current = this.getPoolById(poolId);
+      if (!current) return;
+      // Target + status are metadata: set directly.
+      this.db
+        .prepare('UPDATE crowdfunding_pools SET target_amount = ?, status = ? WHERE id = ?')
+        .run(fields.targetAmount, fields.status, poolId);
+      // Balance: only move it via a recorded adjustment so the ledger stays the
+      // source of truth. Rounded to cents to match monetary handling elsewhere.
+      const delta = Math.round((fields.currentBalance - current.currentBalance) * 100) / 100;
+      if (delta !== 0) {
+        this.db
+          .prepare(
+            `INSERT INTO pool_contributions (id, pool_id, contributor_id, amount, tx_ref, created_at)
+             VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+          )
+          .run(randomUUID(), poolId, adminId, delta, `ADMIN-ADJ-${Date.now().toString(36).toUpperCase()}`);
+        this.db
+          .prepare('UPDATE crowdfunding_pools SET current_balance = current_balance + ? WHERE id = ?')
+          .run(delta, poolId);
+      }
+    });
+    tx();
     return this.getPoolById(poolId);
   }
 

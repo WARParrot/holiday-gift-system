@@ -6,7 +6,7 @@ import { requireAuth } from '../middleware/auth.js';
 export function notificationRoutes(ctx: AppContext): Router {
   const router = Router();
   const { repo, config, notifications } = ctx;
-  router.use(requireAuth(config));
+  router.use(requireAuth(config, repo));
 
   // GET /api/notifications
   router.get('/', (req, res) => {

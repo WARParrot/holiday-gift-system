@@ -2,6 +2,7 @@ import type {
   AppNotification,
   CalendarConnection,
   CalendarProviderName,
+  CelebrationParticipant,
   ChatMessage,
   CrowdfundingPool,
   DirectoryUser,
@@ -102,9 +103,18 @@ export const api = {
   runScheduler: () => request<{ reminders: number; pools: number }>('/notifications/run-scheduler', { method: 'POST' }),
 
   // chat + crowdfunding
-  subjectRoom: (subjectId: string) =>
-    request<{ room: ChatRoomLite; pool: CrowdfundingPool | null }>(`/chat/subject/${subjectId}/room`),
-  roomMessages: (roomId: string) => request<{ messages: ChatMessage[] }>(`/chat/rooms/${roomId}/messages`),
+  joinSubjectRoom: (subjectId: string) =>
+    request<{ room: ChatRoomLite; pool: CrowdfundingPool | null; participants: CelebrationParticipant[] }>(
+      `/chat/subject/${subjectId}/room/join`,
+      { method: 'POST' },
+    ),
+  roomMessages: (roomId: string, opts: { limit?: number; before?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (opts.limit) qs.set('limit', String(opts.limit));
+    if (opts.before) qs.set('before', opts.before);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return request<{ messages: ChatMessage[]; nextBefore: string | null }>(`/chat/rooms/${roomId}/messages${suffix}`);
+  },
   sendMessage: (roomId: string, body: string) =>
     request<{ message: ChatMessage }>(`/chat/rooms/${roomId}/messages`, { method: 'POST', body: JSON.stringify({ body }) }),
   roomPool: (roomId: string) =>

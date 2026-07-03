@@ -16,6 +16,54 @@ This repository is a **monorepo** with two packages:
 > Read it first — it explains *why* every subsystem is built the way it is,
 > including the secret-chat exclusion model and the crowdfunding pseudo-bank.
 
+## What's new in 1.2 (security-hardening / review-fix pass)
+
+This release closes the findings from an external code review of the 1.1 build.
+
+- **Positive authorization for the secret chat** — access is now an explicit
+  allowlist, not "everyone who isn't the birthday person". A new
+  `chat_participants` table (`role`, `source`) records who may read/post. You
+  become eligible to *join* only if you subscribe to the subject (as a friend
+  or via a shared group); joining is an explicit `POST …/room/join` that grants
+  a participant row. Reading/posting requires that row **and** not being the
+  subject. The old GET-side room auto-creation (a GET that mutated state and let
+  any user materialise any subject's room) is gone.
+- **Auth hardening** — the server refuses to boot in `NODE_ENV=production` with
+  the insecure default `JWT_SECRET`. Every authenticated request now
+  re-validates the principal against the database: a token for a **deleted
+  account stops working immediately** (previously it stayed valid until the
+  7-day expiry), and the role is read from the DB rather than trusted from the
+  (long-lived) token, so grant/revoke of admin takes effect at once.
+- **Rate limiting** — a per-IP fixed-window limiter on the whole API, with a
+  much stricter cap on the auth endpoints to blunt credential brute-forcing.
+- **CORS lockdown** — no more wide-open `cors()`. Same-origin only by default;
+  set `CORS_ORIGINS` to an explicit allowlist to permit cross-origin clients.
+- **WebSocket hardening** — every inbound frame is schema-validated (shape,
+  types, and a 4000-char message cap) and the socket payload size is bounded, so
+  malformed or oversized frames can't reach the database.
+- **REST/WS notification parity** — messages sent via the REST fallback now fan
+  out subscriber notifications and clear the author's own counter, exactly like
+  the WebSocket path (previously REST-sent messages skipped notifications).
+- **Auditable admin pool edits** — an admin changing a gift pool's balance now
+  records a reconciling ledger entry in `pool_contributions`, so a pool's
+  balance always equals the sum of its contribution trail (no silent direct
+  writes).
+- **Paginated message history** — `GET …/messages` accepts `?limit=` and a
+  `?before=` cursor (keyed on insertion order, tie-safe) and returns a
+  `nextBefore` cursor, replacing the fixed 500-row cap.
+- **Louder demo labeling** — the mock bank and the simulated (no-OAuth)
+  Google/Yandex calendar integration are called out explicitly in the UI.
+
+### New / changed environment variables
+
+| Variable                 | Default            | Purpose                                             |
+|--------------------------|--------------------|-----------------------------------------------------|
+| `JWT_SECRET`             | dev-only fallback  | **Required in production** (boot fails without it). |
+| `CORS_ORIGINS`           | *(empty)*          | Comma-separated allowlist; empty = same-origin only.|
+| `RATE_LIMIT_WINDOW_MS`   | `60000`            | Rate-limit window length.                           |
+| `RATE_LIMIT_MAX`         | `300`              | Max general API requests / IP / window.             |
+| `RATE_LIMIT_AUTH_MAX`    | `10`               | Max auth attempts / IP / window.                    |
+
 ## What's new in 1.1 (production-hardening pass)
 
 - **Clickable avatar → profile widget** — the header avatar opens a slide-over

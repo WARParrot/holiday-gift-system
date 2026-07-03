@@ -152,6 +152,28 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+export type ParticipantRole = 'ORGANIZER' | 'PARTICIPANT';
+export type ParticipantSource = 'FRIEND' | 'GROUP';
+
+/**
+ * A member of a secret celebration chat. The presence of this row is the
+ * positive authorization grant: only users with a `CelebrationParticipant`
+ * row (and who are not the subject) may read or post in a room.
+ */
+export interface CelebrationParticipant {
+  roomId: string;
+  userId: string;
+  role: ParticipantRole;
+  source: ParticipantSource;
+  joinedAt: string;
+}
+
+/** A participant enriched with the user's display fields (for the roster UI). */
+export interface CelebrationParticipantView extends CelebrationParticipant {
+  fullName: string;
+  avatarUrl: string | null;
+}
+
 export interface CrowdfundingPool {
   id: string;
   subjectId: string;

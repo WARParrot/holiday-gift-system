@@ -13,7 +13,7 @@ import { wishlistCreateSchema, wishlistStatusSchema, wishlistUpdateSchema } from
 export function wishlistRoutes(ctx: AppContext): Router {
   const router = Router();
   const { repo, config } = ctx;
-  router.use(requireAuth(config));
+  router.use(requireAuth(config, repo));
 
   // GET /api/wishlist/:userId — a user's wishlist (own or someone else's)
   router.get('/:userId', (req, res) => {

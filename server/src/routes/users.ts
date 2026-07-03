@@ -3,7 +3,7 @@ import type { AppContext } from './context.js';
 import { requireAuth } from '../middleware/auth.js';
 import { parseBody } from '../util/validate.js';
 import { profileSchema } from './schemas.js';
-import { canAccessSubjectChat } from '../services/chatAccess.js';
+import { checkEligibility } from '../services/chatAccess.js';
 import { daysUntilBirthday } from '../util/dates.js';
 
 /**
@@ -12,7 +12,7 @@ import { daysUntilBirthday } from '../util/dates.js';
 export function userRoutes(ctx: AppContext): Router {
   const router = Router();
   const { repo, config } = ctx;
-  router.use(requireAuth(config));
+  router.use(requireAuth(config, repo));
 
   // GET /api/users  — global directory (scenario 1: Discovery & Directory)
   router.get('/', (req, res) => {
@@ -56,13 +56,20 @@ export function userRoutes(ctx: AppContext): Router {
     const groups = repo.listGroupsForUser(subject.id);
     const wishlist = repo.listWishlist(subject.id);
 
-    // Secret chat visibility: the subject must NEVER see their own chat.
-    const access = canAccessSubjectChat(subject.id, requesterId);
-    let secretChat: { roomId: string; visible: true } | { visible: false } = { visible: false };
-    if (access.allowed) {
-      // Lazily materialise the room so the chat pane has a target id.
-      const room = repo.getOrCreateRoomForSubject(subject.id, cryptoRandom());
-      secretChat = { roomId: room.id, visible: true };
+    // Secret chat visibility (positive-authorization model): the subject NEVER
+    // sees their own chat. A non-subject sees the live room only once they have
+    // explicitly joined (hold a participant grant). If they are merely eligible
+    // (subscribe to the subject) we advertise that they can join — but we do NOT
+    // create the room here. Room/participant creation is an explicit POST.
+    const eligibility = checkEligibility(repo, subject.id, requesterId);
+    const existingRoom = repo.getRoomBySubject(subject.id);
+    let secretChat:
+      | { visible: true; roomId: string }
+      | { visible: false; eligible: boolean } = { visible: false, eligible: false };
+    if (existingRoom && repo.isParticipant(existingRoom.id, requesterId)) {
+      secretChat = { visible: true, roomId: existingRoom.id };
+    } else {
+      secretChat = { visible: false, eligible: eligibility.eligible };
     }
 
     res.json({
@@ -76,9 +83,4 @@ export function userRoutes(ctx: AppContext): Router {
   });
 
   return router;
-}
-
-// Local uuid helper to avoid importing crypto in multiple spots.
-function cryptoRandom(): string {
-  return globalThis.crypto.randomUUID();
 }

@@ -1,12 +1,13 @@
 import type { Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
+import { z } from 'zod';
 import type { AppConfig } from '../config.js';
 import type { Repository } from '../db/repository.js';
 import type { NotificationService } from '../services/notifications.js';
 import { canAccessRoom } from '../services/chatAccess.js';
 import { verifyToken } from '../util/auth.js';
-import type { ChatMessage, CrowdfundingPool, Notification, WsClientFrame, WsServerFrame } from '../types/domain.js';
+import type { ChatMessage, CrowdfundingPool, Notification, WsServerFrame } from '../types/domain.js';
 
 /**
  * Real-time hub for the Secret Coordination Chat.
@@ -21,15 +22,30 @@ import type { ChatMessage, CrowdfundingPool, Notification, WsClientFrame, WsServ
  *   server -> { type: 'pool', pool }            live crowdfunding updates
  *   server -> { type: 'error', error }
  *
- * Security: the socket must authenticate before any join/message. Every join
- * and message is re-checked through `canAccessRoom`, so the birthday subject
- * can never stream their own room even if they craft raw frames.
+ * Security:
+ *  - The socket must authenticate before any join/message.
+ *  - Every join and message is re-checked through `canAccessRoom`, which under
+ *    the positive-authorization model requires an explicit participant grant
+ *    (a subject or a stranger without a grant is rejected even with raw frames).
+ *  - Every inbound frame is schema-validated (shape + types + max body length)
+ *    before it is trusted, so a malformed/oversized frame can't reach the DB.
  */
 interface Client {
   socket: WebSocket;
   userId: string | null;
   rooms: Set<string>;
 }
+
+/** Max characters accepted in a single chat message (WS and REST agree). */
+const MAX_MESSAGE_LENGTH = 4000;
+/** Max bytes accepted for a single inbound WS frame before we drop it. */
+const MAX_FRAME_BYTES = 64 * 1024;
+
+const wsClientFrameSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('auth'), token: z.string().min(1).max(4096) }),
+  z.object({ type: z.literal('join'), roomId: z.string().min(1).max(128) }),
+  z.object({ type: z.literal('message'), roomId: z.string().min(1).max(128), body: z.string().min(1).max(MAX_MESSAGE_LENGTH) }),
+]);
 
 export class ChatHub {
   private readonly wss: WebSocketServer;
@@ -41,7 +57,7 @@ export class ChatHub {
     private readonly config: AppConfig,
     private readonly notifications: NotificationService,
   ) {
-    this.wss = new WebSocketServer({ server, path: '/ws' });
+    this.wss = new WebSocketServer({ server, path: '/ws', maxPayload: MAX_FRAME_BYTES });
     this.wss.on('connection', (socket) => this.onConnection(socket));
   }
 
@@ -58,16 +74,29 @@ export class ChatHub {
   }
 
   private onMessage(client: Client, raw: string): void {
-    let frame: WsClientFrame;
+    if (raw.length > MAX_FRAME_BYTES) {
+      return this.send(client.socket, { type: 'error', error: 'Frame too large' });
+    }
+    let parsed: unknown;
     try {
-      frame = JSON.parse(raw) as WsClientFrame;
+      parsed = JSON.parse(raw);
     } catch {
       return this.send(client.socket, { type: 'error', error: 'Malformed frame' });
     }
+    const result = wsClientFrameSchema.safeParse(parsed);
+    if (!result.success) {
+      return this.send(client.socket, { type: 'error', error: 'Invalid frame' });
+    }
+    const frame = result.data;
 
     if (frame.type === 'auth') {
       const principal = verifyToken(frame.token, this.config.jwtSecret);
       if (!principal) return this.send(client.socket, { type: 'error', error: 'Invalid token' });
+      // Re-validate against the DB: a token for a since-deleted user must not
+      // grant a live socket (mirrors the REST auth re-check).
+      if (!this.repo.findUserById(principal.userId)) {
+        return this.send(client.socket, { type: 'error', error: 'Invalid token' });
+      }
       client.userId = principal.userId;
       return this.send(client.socket, { type: 'ready', userId: principal.userId });
     }
@@ -103,12 +132,21 @@ export class ChatHub {
         body,
       });
       this.broadcastToRoom(frame.roomId, { type: 'message', message: saved });
-      // Posting a message means the author has clearly seen this room, so drop
-      // any chat-counter notification they'd accumulated for it (req 2).
-      this.clearChatNotification(client.userId, frame.roomId);
-      this.notifyOtherParticipants(saved);
+      this.onMessagePosted(saved);
       return;
     }
+  }
+
+  /**
+   * Post-persist side effects shared by BOTH the WS and REST send paths:
+   *   - drop the author's own chat-counter notification for the room (req 2),
+   *   - fan out chat notifications to other subscribers (req 1/3).
+   * Calling this from the REST route closes the prior parity gap where
+   * REST-sent messages skipped subscriber notifications entirely.
+   */
+  onMessagePosted(message: ChatMessage): void {
+    this.clearChatNotification(message.authorId, message.roomId);
+    this.notifyOtherParticipants(message);
   }
 
   /** Broadcast a frame to every authenticated client currently in the room. */

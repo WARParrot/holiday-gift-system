@@ -262,6 +262,10 @@ function CalendarTab() {
         <p className="mt-1 text-xs text-slate-400">
           Connect a calendar to auto-add birthday events for people/groups you subscribe to with calendar sync enabled.
         </p>
+        <p className="mt-1 text-[11px] font-medium text-amber-600">
+          Demo integration — no real Google/Yandex OAuth. Connections and synced events are simulated and recorded
+          server-side so the flow is observable, but nothing is written to a real external calendar.
+        </p>
       </div>
       {PROVIDERS.map((p) => {
         const conn = connected(p.id);

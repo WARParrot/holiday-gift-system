@@ -65,16 +65,27 @@ test('calendar connections upsert and disconnect', () => {
   assert.equal(repo.listCalendarConnections(u.id).length, 1);
 });
 
-test('admin pool finance update sets balance/target/status directly', () => {
+test('admin pool finance update records a reconciling ledger entry (pools stay balanced)', () => {
   const repo = new Repository(openDatabase(':memory:'));
   const subject = mkUser('s@x.com');
-  repo.createUser(subject);
+  const admin = mkUser('admin@x.com');
+  [subject, admin].forEach((u) => repo.createUser(u));
   const room = repo.getOrCreateRoomForSubject(subject.id, randomUUID());
   const poolId = randomUUID();
   repo.createPool({ id: poolId, subjectId: subject.id, subjectName: 'S', roomId: room.id, targetAmount: 100, currentBalance: 0, status: 'OPEN', openedAt: '', cycleKey: `${subject.id}:2099` });
 
-  const updated = repo.updatePoolFinance(poolId, { targetAmount: 200, currentBalance: 75, status: 'OPEN' });
+  const updated = repo.updatePoolFinance(poolId, { targetAmount: 200, currentBalance: 75, status: 'OPEN' }, admin.id);
   assert.equal(updated!.targetAmount, 200);
   assert.equal(updated!.currentBalance, 75);
   assert.equal(repo.listAllPools().length, 1);
+
+  // The +75 balance change was recorded as a contribution (attributed to the
+  // admin) so the pool balance equals the sum of its contribution trail — no
+  // silent direct write to current_balance.
+  const contributions = repo.listContributions(poolId);
+  assert.equal(contributions.length, 1);
+  assert.equal(contributions[0].amount, 75);
+  assert.equal(contributions[0].contributorId, admin.id);
+  const sum = contributions.reduce((acc, c) => acc + c.amount, 0);
+  assert.equal(sum, updated!.currentBalance);
 });

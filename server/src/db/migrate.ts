@@ -133,6 +133,14 @@ function main(): void {
   });
   const carolPool = repo.getPoolByRoom(carolRoom.id)!;
 
+  // Under the positive-authorization model, contributors must be explicit
+  // participants of the room. Alice (organizer) and Bob join Carol's chat so
+  // the seeded secret chat + gift pool are populated and usable out of the box.
+  repo.addParticipant(carolRoom.id, alice.id, 'ORGANIZER', 'FRIEND');
+  repo.addParticipant(carolRoom.id, bob.id, 'PARTICIPANT', 'GROUP');
+  repo.addMessage({ id: randomUUID(), roomId: carolRoom.id, authorId: alice.id, body: "Let's chip in for Carol's mechanical keyboard! 🎹" });
+  repo.addMessage({ id: randomUUID(), roomId: carolRoom.id, authorId: bob.id, body: 'Great idea — I just added to the pool.' });
+
   // Seed a couple of real contributions, debiting the contributors' wallets so
   // balances and the pool total are internally consistent.
   const seedContribution = (fromUser: UserRow, amount: number) => {

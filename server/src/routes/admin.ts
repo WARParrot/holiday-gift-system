@@ -21,7 +21,7 @@ import type { UserRow } from '../types/domain.js';
 export function adminRoutes(ctx: AppContext): Router {
   const router = Router();
   const { repo, config } = ctx;
-  router.use(requireAuth(config), requireAdmin);
+  router.use(requireAuth(config, repo), requireAdmin);
 
   // --- Users -------------------------------------------------------------
   router.get('/users', (_req, res) => {
@@ -132,7 +132,7 @@ export function adminRoutes(ctx: AppContext): Router {
       targetAmount: body.targetAmount,
       currentBalance: body.currentBalance,
       status: body.status,
-    });
+    }, req.principal!.userId);
     // Push the change live to anyone watching the room.
     if (updated) ctx.hub.current?.publishPool(updated);
     res.json({ pool: updated });

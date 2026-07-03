@@ -11,7 +11,7 @@ import { groupSchema } from './schemas.js';
 export function groupRoutes(ctx: AppContext): Router {
   const router = Router();
   const { repo, config } = ctx;
-  router.use(requireAuth(config));
+  router.use(requireAuth(config, repo));
 
   // GET /api/groups — master directory of all groups (scenario 1)
   router.get('/', (req, res) => {

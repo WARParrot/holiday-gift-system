@@ -18,7 +18,7 @@ import { processMockCharge } from '../services/mockBank.js';
 export function paymentRoutes(ctx: AppContext): Router {
   const router = Router();
   const { repo, config } = ctx;
-  router.use(requireAuth(config));
+  router.use(requireAuth(config, repo));
 
   // GET /api/payments/wallet — current balance + ledger
   router.get('/wallet', (req, res) => {
