@@ -1,5 +1,7 @@
-export function Loading({ label = 'Loading…' }: { label?: string }) {
-  return <p className="py-8 text-center text-sm text-slate-400">{label}</p>;
+import i18n from '../i18n';
+
+export function Loading({ label }: { label?: string }) {
+  return <p className="py-8 text-center text-sm text-slate-400">{label ?? i18n.t('common.loading')}</p>;
 }
 
 export function ErrorNote({ message }: { message: string }) {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNotifications } from '../store/notifications';
 import { useNotificationSocket } from '../hooks/useNotificationSocket';
 import { formatDateTime } from './format';
@@ -11,6 +12,7 @@ const TYPE_STYLES: Record<string, string> = {
 };
 
 export function NotificationBell() {
+  const { t } = useTranslation();
   const { items, unread, refresh, markRead, markAllRead } = useNotifications();
   const [open, setOpen] = useState(false);
 
@@ -25,7 +27,7 @@ export function NotificationBell() {
 
   return (
     <div className="relative">
-      <button className="btn-ghost relative" onClick={() => setOpen((o) => !o)} aria-label="Notifications">
+      <button className="btn-ghost relative" onClick={() => setOpen((o) => !o)} aria-label={t('notifications.title')}>
         🔔
         {unread > 0 && (
           <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold text-white">
@@ -36,13 +38,13 @@ export function NotificationBell() {
       {open && (
         <div className="absolute right-0 z-20 mt-2 w-80 rounded-xl border border-slate-200 bg-white shadow-lg">
           <div className="flex items-center justify-between border-b border-slate-100 p-3">
-            <span className="font-semibold">Notifications</span>
+            <span className="font-semibold">{t('notifications.title')}</span>
             <button className="text-xs text-brand-600 hover:underline" onClick={() => markAllRead()}>
-              Mark all read
+              {t('notifications.markAllRead')}
             </button>
           </div>
           <div className="max-h-96 overflow-y-auto">
-            {items.length === 0 && <p className="p-4 text-sm text-slate-500">No notifications yet.</p>}
+            {items.length === 0 && <p className="p-4 text-sm text-slate-500">{t('notifications.empty')}</p>}
             {items.map((n) => (
               <button
                 key={n.id}
@@ -50,7 +52,7 @@ export function NotificationBell() {
                 className={`block w-full border-b border-slate-50 p-3 text-left hover:bg-slate-50 ${n.read ? 'opacity-60' : ''}`}
               >
                 <div className="flex items-center gap-2">
-                  <span className={`badge ${TYPE_STYLES[n.type] ?? TYPE_STYLES.SYSTEM}`}>{n.type}</span>
+                  <span className={`badge ${TYPE_STYLES[n.type] ?? TYPE_STYLES.SYSTEM}`}>{t(`notifications.type${n.type}`, n.type)}</span>
                   {!n.read && <span className="h-2 w-2 rounded-full bg-brand-500" />}
                   <span className="ml-auto text-xs text-slate-400">{formatDateTime(n.createdAt)}</span>
                 </div>

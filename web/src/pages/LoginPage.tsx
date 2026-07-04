@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { useAuth } from '../store/auth';
 
@@ -8,6 +9,7 @@ import { useAuth } from '../store/auth';
  * reviewer can jump straight into the core scenarios.
  */
 export function LoginPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const setSession = useAuth((s) => s.setSession);
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -30,7 +32,7 @@ export function LoginPage() {
       setSession(res.token, res.user);
       navigate('/directory');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authentication failed');
+      setError(err instanceof Error ? err.message : t('login.authFailed'));
     } finally {
       setBusy(false);
     }
@@ -39,9 +41,9 @@ export function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
-        <h1 className="text-2xl font-bold text-slate-800">🎂 Birthday Coordinator</h1>
+        <h1 className="text-2xl font-bold text-slate-800">{t('login.title')}</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Plan celebrations without the birthday person ever knowing.
+          {t('login.subtitle')}
         </p>
 
         <div className="mt-6 flex gap-2">
@@ -50,21 +52,21 @@ export function LoginPage() {
             onClick={() => setMode('login')}
             className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium ${mode === 'login' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}
           >
-            Sign in
+            {t('login.signIn')}
           </button>
           <button
             type="button"
             onClick={() => setMode('register')}
             className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium ${mode === 'register' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}
           >
-            Register
+            {t('login.register')}
           </button>
         </div>
 
         <form onSubmit={submit} className="mt-6 space-y-4">
           {mode === 'register' && (
             <div>
-              <label className="block text-sm font-medium text-slate-700">Full name</label>
+              <label className="block text-sm font-medium text-slate-700">{t('login.fullName')}</label>
               <input
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                 value={fullName}
@@ -74,7 +76,7 @@ export function LoginPage() {
             </div>
           )}
           <div>
-            <label className="block text-sm font-medium text-slate-700">Email</label>
+            <label className="block text-sm font-medium text-slate-700">{t('login.email')}</label>
             <input
               type="email"
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
@@ -84,7 +86,7 @@ export function LoginPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700">Password</label>
+            <label className="block text-sm font-medium text-slate-700">{t('login.password')}</label>
             <input
               type="password"
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
@@ -95,7 +97,7 @@ export function LoginPage() {
           </div>
           {mode === 'register' && (
             <div>
-              <label className="block text-sm font-medium text-slate-700">Birthdate</label>
+              <label className="block text-sm font-medium text-slate-700">{t('login.birthdate')}</label>
               <input
                 type="date"
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
@@ -111,12 +113,12 @@ export function LoginPage() {
             disabled={busy}
             className="w-full rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
           >
-            {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
+            {busy ? t('common.pleaseWait') : mode === 'login' ? t('login.signIn') : t('login.createAccount')}
           </button>
         </form>
 
         <div className="mt-6 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
-          <p className="font-medium text-slate-600">Demo logins (password: <code>password</code>)</p>
+          <p className="font-medium text-slate-600">{t('login.demoLoginsLabel')} <code>password</code></p>
           <p className="mt-1">alice@ · bob@ · carol@ · dave@ · erin@ · admin@example.com</p>
         </div>
       </div>

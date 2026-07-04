@@ -1,7 +1,9 @@
 import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import './styles/index.css';
+import './i18n';
 import { Layout } from './components/Layout';
 import { useAuth } from './store/auth';
 import { api } from './api/client';
@@ -17,6 +19,7 @@ import { ProfilePage } from './pages/ProfilePage';
 import { AdminPage } from './pages/AdminPage';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   const token = useAuth((s) => s.token);
   const user = useAuth((s) => s.user);
   const setUser = useAuth((s) => s.setUser);
@@ -47,7 +50,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   if (!user) {
     return (
       <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">
-        Loading…
+        {t('common.loading')}
       </div>
     );
   }

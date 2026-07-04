@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { useAuth } from '../store/auth';
 import { Avatar } from '../components/Avatar';
 
 /** Profile management — edit full name, birthdate, and avatar URL. */
 export function ProfilePage() {
+  const { t } = useTranslation();
   const user = useAuth((s) => s.user);
   const setSession = useAuth((s) => s.setSession);
   const token = useAuth((s) => s.token);
@@ -26,11 +28,11 @@ export function ProfilePage() {
     const detail = params.get('detail');
     setCalendarBanner(
       st === 'connected'
-        ? { ok: true, text: `Connected ${cal}${detail ? ` (${detail})` : ''}. Open the avatar → Calendar to manage it.` }
-        : { ok: false, text: `Could not connect ${cal}: ${detail || 'unknown error'}.` },
+        ? { ok: true, text: t('profile.calendarConnected', { provider: cal, detail: detail ? ` (${detail})` : '' }) }
+        : { ok: false, text: t('profile.calendarError', { provider: cal, detail: detail || 'unknown error' }) },
     );
     window.history.replaceState({}, '', window.location.pathname);
-  }, []);
+  }, [t]);
 
   if (!user) return null;
 
@@ -41,15 +43,15 @@ export function ProfilePage() {
     try {
       const res = await api.updateMe({ fullName: fullName.trim(), birthdate, avatarUrl: avatarUrl.trim() || null });
       if (token) setSession(token, res.user);
-      setStatus('Profile saved.');
+      setStatus(t('profile.saved'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed');
+      setError(err instanceof Error ? err.message : t('common.saveFailed'));
     }
   }
 
   return (
     <div className="mx-auto max-w-lg">
-      <h1 className="mb-4 text-xl font-bold">My profile</h1>
+      <h1 className="mb-4 text-xl font-bold">{t('profile.title')}</h1>
       {calendarBanner && (
         <div
           className={`mb-4 rounded-lg border p-3 text-sm ${
@@ -67,26 +69,26 @@ export function ProfilePage() {
           <div>
             <div className="font-semibold">{user.fullName}</div>
             <div className="text-sm text-slate-500">{user.email}</div>
-            <div className="mt-1 text-xs text-slate-400">Role: {user.role}</div>
+            <div className="mt-1 text-xs text-slate-400">{t('profile.role', { role: user.role })}</div>
           </div>
         </div>
         <form onSubmit={save} className="space-y-3">
           <label className="block text-sm">
-            <span className="mb-1 block font-medium text-slate-600">Full name</span>
+            <span className="mb-1 block font-medium text-slate-600">{t('profile.fullName')}</span>
             <input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
           </label>
           <label className="block text-sm">
-            <span className="mb-1 block font-medium text-slate-600">Birthdate</span>
+            <span className="mb-1 block font-medium text-slate-600">{t('profile.birthdate')}</span>
             <input className="input" type="date" value={birthdate} onChange={(e) => setBirthdate(e.target.value)} required />
           </label>
           <label className="block text-sm">
-            <span className="mb-1 block font-medium text-slate-600">Avatar URL (optional)</span>
+            <span className="mb-1 block font-medium text-slate-600">{t('profile.avatarUrl')}</span>
             <input className="input" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://…" />
           </label>
           {status && <p className="text-sm text-emerald-600">{status}</p>}
           {error && <p className="text-sm text-rose-600">{error}</p>}
           <button type="submit" className="btn-primary w-full">
-            Save changes
+            {t('common.saveChanges')}
           </button>
         </form>
       </div>

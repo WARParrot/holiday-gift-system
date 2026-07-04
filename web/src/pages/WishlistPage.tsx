@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { useAuth } from '../store/auth';
 import type { WishlistItem } from '../types/domain';
@@ -17,6 +18,7 @@ const EMPTY: FormState = { title: '', description: '', link: '', priceMin: '', p
 
 /** Scenario 3 (self side) — manage your own wishlist. */
 export function WishlistPage() {
+  const { t } = useTranslation();
   const user = useAuth((s) => s.user);
   const [items, setItems] = useState<WishlistItem[] | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY);
@@ -28,7 +30,7 @@ export function WishlistPage() {
     api
       .wishlist(user.id)
       .then((r) => setItems(r.items))
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load wishlist'));
+      .catch((e) => setError(e instanceof Error ? e.message : t('wishlist.loadFailed')));
   };
   useEffect(load, [user]);
 
@@ -52,7 +54,7 @@ export function WishlistPage() {
       setEditingId(null);
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed');
+      setError(err instanceof Error ? err.message : t('common.saveFailed'));
     }
   }
 
@@ -73,13 +75,13 @@ export function WishlistPage() {
   }
 
   if (error) return <ErrorNote message={error} />;
-  if (!items) return <Loading label="Loading your wishlist…" />;
+  if (!items) return <Loading label={t('wishlist.loading')} />;
 
   return (
     <div className="grid gap-6 md:grid-cols-[1fr_360px]">
       <div>
-        <h1 className="mb-4 text-xl font-bold">My wishlist</h1>
-        {items.length === 0 && <Empty label="Your wishlist is empty. Add something you'd love to receive." />}
+        <h1 className="mb-4 text-xl font-bold">{t('wishlist.title')}</h1>
+        {items.length === 0 && <Empty label={t('wishlist.empty')} />}
         <div className="space-y-3">
           {items.map((item) => {
             const price = formatPriceRange(item.priceMin, item.priceMax);
@@ -91,20 +93,20 @@ export function WishlistPage() {
                     {item.description && <p className="mt-1 text-sm text-slate-500">{item.description}</p>}
                     <div className="mt-2 flex items-center gap-3 text-xs">
                       {price && <span className="badge bg-emerald-50 text-emerald-700">{price}</span>}
-                      <span className="badge bg-slate-100 text-slate-500">{item.status}</span>
+                      <span className="badge bg-slate-100 text-slate-500">{t(`wishlistStatus.${item.status}`)}</span>
                       {item.link && (
                         <a href={item.link} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">
-                          View link ↗
+                          {t('wishlist.viewLink')}
                         </a>
                       )}
                     </div>
                   </div>
                   <div className="flex gap-2">
                     <button className="btn-ghost" onClick={() => startEdit(item)}>
-                      Edit
+                      {t('common.edit')}
                     </button>
                     <button className="btn-ghost text-rose-600" onClick={() => remove(item.id)}>
-                      Delete
+                      {t('common.delete')}
                     </button>
                   </div>
                 </div>
@@ -115,21 +117,21 @@ export function WishlistPage() {
       </div>
 
       <form onSubmit={submit} className="card h-fit space-y-3">
-        <h2 className="font-semibold">{editingId ? 'Edit item' : 'Add an item'}</h2>
-        <input className="input" placeholder="Title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
-        <textarea className="input" placeholder="Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} />
-        <input className="input" placeholder="Link (optional)" value={form.link} onChange={(e) => setForm({ ...form, link: e.target.value })} />
+        <h2 className="font-semibold">{editingId ? t('wishlist.editItem') : t('wishlist.addItem')}</h2>
+        <input className="input" placeholder={t('wishlist.fieldTitle')} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
+        <textarea className="input" placeholder={t('wishlist.fieldDescription')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} />
+        <input className="input" placeholder={t('wishlist.fieldLink')} value={form.link} onChange={(e) => setForm({ ...form, link: e.target.value })} />
         <div className="flex gap-2">
-          <input className="input" placeholder="Min $" type="number" value={form.priceMin} onChange={(e) => setForm({ ...form, priceMin: e.target.value })} />
-          <input className="input" placeholder="Max $" type="number" value={form.priceMax} onChange={(e) => setForm({ ...form, priceMax: e.target.value })} />
+          <input className="input" placeholder={t('wishlist.minPrice')} type="number" value={form.priceMin} onChange={(e) => setForm({ ...form, priceMin: e.target.value })} />
+          <input className="input" placeholder={t('wishlist.maxPrice')} type="number" value={form.priceMax} onChange={(e) => setForm({ ...form, priceMax: e.target.value })} />
         </div>
         <div className="flex gap-2">
           <button type="submit" className="btn-primary flex-1">
-            {editingId ? 'Save changes' : 'Add item'}
+            {editingId ? t('common.saveChanges') : t('wishlist.addItemBtn')}
           </button>
           {editingId && (
             <button type="button" className="btn-ghost" onClick={() => { setEditingId(null); setForm(EMPTY); }}>
-              Cancel
+              {t('common.cancel')}
             </button>
           )}
         </div>

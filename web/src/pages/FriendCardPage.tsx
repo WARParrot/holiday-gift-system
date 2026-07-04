@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { FriendCard, FriendStatus, WishlistItem } from '../types/domain';
 import { useAuth } from '../store/auth';
@@ -14,6 +15,7 @@ import { SecretChat } from '../components/SecretChat';
  * when the backend says it's visible (i.e. the viewer is NOT the subject).
  */
 export function FriendCardPage() {
+  const { t } = useTranslation();
   const { userId } = useParams<{ userId: string }>();
   const me = useAuth((s) => s.user);
   const [card, setCard] = useState<FriendCard | null>(null);
@@ -26,7 +28,7 @@ export function FriendCardPage() {
     api
       .friendCard(userId)
       .then(setCard)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load friend card'));
+      .catch((e) => setError(e instanceof Error ? e.message : t('friendCard.loadFailed')));
   };
 
   useEffect(load, [userId]);
@@ -51,7 +53,7 @@ export function FriendCardPage() {
   }
 
   if (error) return <ErrorNote message={error} />;
-  if (!card) return <Loading label="Loading friend card…" />;
+  if (!card) return <Loading label={t('friendCard.loading')} />;
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -72,26 +74,26 @@ export function FriendCardPage() {
               {card.friendState === 'friends' ? (
                 <>
                   <button className={subscribed ? 'btn-ghost' : 'btn-primary'} onClick={toggleSubscribe}>
-                    {subscribed ? '✓ Subscribed' : 'Subscribe to reminders'}
+                    {subscribed ? t('friendCard.subscribed') : t('friendCard.subscribe')}
                   </button>
                   {!subscribed && (
                     <label className="flex items-center gap-2 text-sm text-slate-600">
                       <input type="checkbox" checked={calendarSync} onChange={(e) => setCalendarSync(e.target.checked)} />
-                      Add to my calendar
+                      {t('friendCard.addToCalendar')}
                     </label>
                   )}
                 </>
               ) : (
-                <span className="text-sm text-slate-400">Become friends to subscribe to reminders.</span>
+                <span className="text-sm text-slate-400">{t('friendCard.becomeFriends')}</span>
               )}
             </div>
           )}
         </div>
 
         <div className="card">
-          <h2 className="mb-2 font-semibold">Shared &amp; member groups</h2>
+          <h2 className="mb-2 font-semibold">{t('friendCard.sharedGroups')}</h2>
           {card.groups.length === 0 ? (
-            <p className="text-sm text-slate-400">Not in any groups.</p>
+            <p className="text-sm text-slate-400">{t('friendCard.notInGroups')}</p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {card.groups.map((g) => (
@@ -111,16 +113,16 @@ export function FriendCardPage() {
           <SecretChat roomId={card.secretChat.roomId} subjectName={card.user.fullName} />
         ) : (
           <div className="card">
-            <h2 className="font-semibold">Secret coordination chat</h2>
+            <h2 className="font-semibold">{t('friendCard.secretChatTitle')}</h2>
             {card.isSelf ? (
               <p className="mt-2 text-sm text-slate-500">
-                This is your own card — the celebration chat about you is hidden from you by design. 🤫
+                {t('friendCard.ownCardHidden')}
               </p>
             ) : card.secretChat.eligible ? (
               <JoinSecretChat subjectId={card.user.id} onJoined={load} />
             ) : (
               <p className="mt-2 text-sm text-slate-500">
-                Subscribe to {card.user.fullName}'s reminders to join the secret planning chat.
+                {t('friendCard.subscribeToJoin', { name: card.user.fullName })}
               </p>
             )}
           </div>
@@ -131,6 +133,7 @@ export function FriendCardPage() {
 }
 
 function FriendControls({ userId, name, state, onChanged }: { userId: string; name: string; state: FriendStatus; onChanged: () => void }) {
+  const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -143,24 +146,25 @@ function FriendControls({ userId, name, state, onChanged }: { userId: string; na
   };
 
   if (state === 'friends') {
-    return <button className="btn-ghost" disabled={busy} onClick={() => run(() => api.removeFriend(userId))}>✓ Friends</button>;
+    return <button className="btn-ghost" disabled={busy} onClick={() => run(() => api.removeFriend(userId))}>{t('friendCard.stateFriends')}</button>;
   }
   if (state === 'pending_outgoing') {
-    return <button className="btn-ghost" disabled={busy} onClick={() => run(() => api.removeFriend(userId))}>Cancel request</button>;
+    return <button className="btn-ghost" disabled={busy} onClick={() => run(() => api.removeFriend(userId))}>{t('friendCard.cancelRequest')}</button>;
   }
   if (state === 'pending_incoming') {
     return (
       <div className="flex items-center gap-2">
-        <span className="text-sm text-slate-500">{name} sent you a friend request</span>
-        <button className="btn-primary" disabled={busy} onClick={() => run(() => api.acceptFriend(userId))}>Accept</button>
-        <button className="btn-ghost" disabled={busy} onClick={() => run(() => api.removeFriend(userId))}>Decline</button>
+        <span className="text-sm text-slate-500">{t('friendCard.sentYouRequest', { name })}</span>
+        <button className="btn-primary" disabled={busy} onClick={() => run(() => api.acceptFriend(userId))}>{t('common.accept')}</button>
+        <button className="btn-ghost" disabled={busy} onClick={() => run(() => api.removeFriend(userId))}>{t('common.decline')}</button>
       </div>
     );
   }
-  return <button className="btn-primary" disabled={busy} onClick={() => run(() => api.sendFriendRequest(userId))}>Add friend</button>;
+  return <button className="btn-primary" disabled={busy} onClick={() => run(() => api.sendFriendRequest(userId))}>{t('friendCard.addFriend')}</button>;
 }
 
 function JoinSecretChat({ subjectId, onJoined }: { subjectId: string; onJoined: () => void }) {
+  const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -171,7 +175,7 @@ function JoinSecretChat({ subjectId, onJoined }: { subjectId: string; onJoined: 
       await api.joinSubjectRoom(subjectId);
       onJoined();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not join the chat');
+      setError(err instanceof Error ? err.message : t('friendCard.couldNotJoin'));
     } finally {
       setBusy(false);
     }
@@ -180,11 +184,10 @@ function JoinSecretChat({ subjectId, onJoined }: { subjectId: string; onJoined: 
   return (
     <div className="mt-2 space-y-2">
       <p className="text-sm text-slate-500">
-        You're eligible to help plan this celebration. Join the secret chat to coordinate — the birthday person can
-        never see it. 🤫
+        {t('friendCard.joinEligible')}
       </p>
       <button className="btn-primary" onClick={join} disabled={busy}>
-        {busy ? 'Joining…' : 'Join secret chat'}
+        {busy ? t('friendCard.joining') : t('friendCard.joinButton')}
       </button>
       {error && <p className="text-sm text-rose-600">{error}</p>}
     </div>
@@ -202,6 +205,7 @@ function WishlistPanel({
   viewerId: string;
   onChange: () => void;
 }) {
+  const { t } = useTranslation();
   async function suggest(item: WishlistItem) {
     const next = item.status === 'OPEN' ? 'SUGGESTED' : 'OPEN';
     await api.setWishlistStatus(item.id, next);
@@ -210,8 +214,8 @@ function WishlistPanel({
 
   return (
     <div className="card">
-      <h2 className="mb-2 font-semibold">Wishlist</h2>
-      {items.length === 0 && <p className="text-sm text-slate-400">No wishlist items yet.</p>}
+      <h2 className="mb-2 font-semibold">{t('friendCard.wishlist')}</h2>
+      {items.length === 0 && <p className="text-sm text-slate-400">{t('friendCard.noWishlist')}</p>}
       <ul className="space-y-2">
         {items.map((item) => {
           const price = formatPriceRange(item.priceMin, item.priceMax);
@@ -225,17 +229,17 @@ function WishlistPanel({
                     {price && <span className="text-slate-500">{price}</span>}
                     {item.link && (
                       <a href={item.link} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline">
-                        link ↗
+                        {t('friendCard.link')}
                       </a>
                     )}
                     {item.status !== 'OPEN' && (
-                      <span className="badge bg-emerald-100 text-emerald-700">{item.status}</span>
+                      <span className="badge bg-emerald-100 text-emerald-700">{t(`wishlistStatus.${item.status}`)}</span>
                     )}
                   </div>
                 </div>
                 {!isSelf && viewerId && (
                   <button className="btn-ghost text-xs" onClick={() => suggest(item)}>
-                    {item.status === 'OPEN' ? 'Mark suggested' : 'Unmark'}
+                    {item.status === 'OPEN' ? t('friendCard.markSuggested') : t('friendCard.unmark')}
                   </button>
                 )}
               </div>

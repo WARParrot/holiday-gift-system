@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { useChatSocket } from '../hooks/useChatSocket';
 import { useAuth } from '../store/auth';
@@ -10,6 +11,7 @@ import type { ChatMessage, CrowdfundingPool, PoolContribution } from '../types/d
  * Live message stream + the pinned crowdfunding progress widget.
  */
 export function SecretChat({ roomId, subjectName }: { roomId: string; subjectName: string }) {
+  const { t } = useTranslation();
   const me = useAuth((s) => s.user);
   const { connected, messages, pool, error, send, setPool } = useChatSocket(roomId);
   const [draft, setDraft] = useState('');
@@ -23,18 +25,18 @@ export function SecretChat({ roomId, subjectName }: { roomId: string; subjectNam
     <div className="card flex h-[36rem] flex-col">
       <div className="flex items-center justify-between border-b border-slate-100 pb-2">
         <div>
-          <h2 className="font-semibold">🤫 Secret chat</h2>
-          <p className="text-xs text-slate-400">Planning {subjectName}'s celebration — invisible to them</p>
+          <h2 className="font-semibold">{t('secretChat.title')}</h2>
+          <p className="text-xs text-slate-400">{t('secretChat.planningFor', { name: subjectName })}</p>
         </div>
         <span className={`badge ${connected ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-          {connected ? 'live' : 'connecting…'}
+          {connected ? t('secretChat.live') : t('secretChat.connecting')}
         </span>
       </div>
 
       <PoolWidget roomId={roomId} pool={pool} onPool={setPool} />
 
       <div ref={scrollRef} className="mt-2 flex-1 space-y-2 overflow-y-auto py-2">
-        {messages.length === 0 && <p className="text-center text-sm text-slate-400">No messages yet. Start planning!</p>}
+        {messages.length === 0 && <p className="text-center text-sm text-slate-400">{t('secretChat.noMessages')}</p>}
         {messages.map((m) => {
           const mine = m.authorId === me?.id;
           return <MessageBubble key={m.id} roomId={roomId} message={m} mine={mine} />;
@@ -53,9 +55,9 @@ export function SecretChat({ roomId, subjectName }: { roomId: string; subjectNam
           }
         }}
       >
-        <input className="input" placeholder="Message the planning team…" value={draft} onChange={(e) => setDraft(e.target.value)} />
+        <input className="input" placeholder={t('secretChat.messagePlaceholder')} value={draft} onChange={(e) => setDraft(e.target.value)} />
         <button className="btn-primary" type="submit" disabled={!connected}>
-          Send
+          {t('common.send')}
         </button>
       </form>
     </div>
@@ -63,6 +65,7 @@ export function SecretChat({ roomId, subjectName }: { roomId: string; subjectNam
 }
 
 function MessageBubble({ roomId, message, mine }: { roomId: string; message: ChatMessage; mine: boolean }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.body);
   const [busy, setBusy] = useState(false);
@@ -83,7 +86,7 @@ function MessageBubble({ roomId, message, mine }: { roomId: string; message: Cha
   }
 
   async function remove() {
-    if (!confirm('Delete this message?')) return;
+    if (!confirm(t('secretChat.deleteConfirm'))) return;
     setBusy(true);
     try {
       await api.deleteMessage(roomId, message.id);
@@ -100,8 +103,8 @@ function MessageBubble({ roomId, message, mine }: { roomId: string; message: Cha
           <div className="space-y-1">
             <textarea className="w-full rounded bg-white/90 p-1 text-slate-800" rows={2} value={draft} onChange={(e) => setDraft(e.target.value)} />
             <div className="flex gap-2 text-[11px]">
-              <button className="font-medium underline" disabled={busy} onClick={saveEdit}>Save</button>
-              <button className="opacity-80 underline" onClick={() => { setDraft(message.body); setEditing(false); }}>Cancel</button>
+              <button className="font-medium underline" disabled={busy} onClick={saveEdit}>{t('common.save')}</button>
+              <button className="opacity-80 underline" onClick={() => { setDraft(message.body); setEditing(false); }}>{t('common.cancel')}</button>
             </div>
           </div>
         ) : (
@@ -111,8 +114,8 @@ function MessageBubble({ roomId, message, mine }: { roomId: string; message: Cha
           <span className={`text-[10px] ${mine ? 'text-white/70' : 'text-slate-400'}`}>{formatDateTime(message.createdAt)}</span>
           {mine && !editing && (
             <span className="hidden gap-2 text-[10px] text-white/80 group-hover:flex">
-              <button className="underline" onClick={() => { setDraft(message.body); setEditing(true); }}>edit</button>
-              <button className="underline" disabled={busy} onClick={remove}>delete</button>
+              <button className="underline" onClick={() => { setDraft(message.body); setEditing(true); }}>{t('secretChat.editLower')}</button>
+              <button className="underline" disabled={busy} onClick={remove}>{t('secretChat.deleteLower')}</button>
             </span>
           )}
         </div>
@@ -130,6 +133,7 @@ function PoolWidget({
   pool: CrowdfundingPool | null;
   onPool: (p: CrowdfundingPool) => void;
 }) {
+  const { t } = useTranslation();
   const { user, token, setSession } = useAuth();
   const [contributions, setContributions] = useState<PoolContribution[]>([]);
   const [amount, setAmount] = useState('10');
@@ -155,7 +159,7 @@ function PoolWidget({
   if (!active) {
     return (
       <div className="mt-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
-        No gift pool yet — one opens automatically as the birthday approaches.
+        {t('secretChat.noPool')}
       </div>
     );
   }
@@ -179,7 +183,7 @@ function PoolWidget({
       }
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Contribution failed');
+      setError(err instanceof Error ? err.message : t('secretChat.contributionFailed'));
     } finally {
       setBusy(false);
     }
@@ -188,7 +192,7 @@ function PoolWidget({
   return (
     <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50 p-3">
       <div className="flex items-center justify-between text-sm">
-        <span className="font-medium text-emerald-800">🎁 Gift pool</span>
+        <span className="font-medium text-emerald-800">{t('secretChat.giftPool')}</span>
         <span className="text-emerald-700">
           ${active.currentBalance.toFixed(2)} / ${active.targetAmount.toFixed(2)} ({pct}%)
         </span>
@@ -199,10 +203,10 @@ function PoolWidget({
           style={{ width: `${pct}%` }}
         />
       </div>
-      {reached && <p className="mt-1 text-[11px] font-medium text-emerald-700">🎉 Target reached!</p>}
+      {reached && <p className="mt-1 text-[11px] font-medium text-emerald-700">{t('secretChat.targetReached')}</p>}
 
       {active.status === 'CLOSED' ? (
-        <p className="mt-2 text-xs text-slate-500">This pool is closed to new contributions.</p>
+        <p className="mt-2 text-xs text-slate-500">{t('secretChat.poolClosed')}</p>
       ) : (
         <form className="mt-2 flex gap-2" onSubmit={contribute}>
           <input
@@ -213,12 +217,12 @@ function PoolWidget({
             onChange={(e) => setAmount(e.target.value)}
           />
           <button className="btn-primary py-1 text-xs" disabled={busy}>
-            {busy ? '…' : 'Contribute'}
+            {busy ? '…' : t('secretChat.contribute')}
           </button>
         </form>
       )}
       {typeof user?.balance === 'number' && (
-        <p className="mt-1 text-[11px] text-emerald-700">Your balance: ${user.balance.toFixed(2)}</p>
+        <p className="mt-1 text-[11px] text-emerald-700">{t('secretChat.yourBalance', { amount: user.balance.toFixed(2) })}</p>
       )}
       {error && <p className="mt-1 text-[11px] font-medium text-rose-600">{error}</p>}
 

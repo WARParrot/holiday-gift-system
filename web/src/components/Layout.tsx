@@ -1,19 +1,21 @@
 import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../store/auth';
 import { NotificationBell } from './NotificationBell';
 import { Avatar } from './Avatar';
 import { ProfileWidget } from './ProfileWidget';
 
 const navItems = [
-  { to: '/directory', label: 'Directory' },
-  { to: '/friends', label: 'Friends' },
-  { to: '/groups', label: 'Groups' },
-  { to: '/subscriptions', label: 'Subscriptions' },
-  { to: '/wishlist', label: 'My Wishlist' },
+  { to: '/directory', key: 'directory' },
+  { to: '/friends', key: 'friends' },
+  { to: '/groups', key: 'groups' },
+  { to: '/subscriptions', key: 'subscriptions' },
+  { to: '/wishlist', key: 'wishlist' },
 ];
 
 export function Layout() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
 
@@ -33,7 +35,7 @@ export function Layout() {
                   `rounded-lg px-3 py-1.5 text-sm font-medium ${isActive ? 'bg-brand-100 text-brand-700' : 'text-slate-600 hover:bg-slate-100'}`
                 }
               >
-                {item.label}
+                {t(`nav.${item.key}`)}
               </NavLink>
             ))}
             {user?.role === 'ADMIN' && (
@@ -43,7 +45,7 @@ export function Layout() {
                   `rounded-lg px-3 py-1.5 text-sm font-medium ${isActive ? 'bg-brand-100 text-brand-700' : 'text-slate-600 hover:bg-slate-100'}`
                 }
               >
-                Admin
+                {t('nav.admin')}
               </NavLink>
             )}
           </nav>
@@ -53,8 +55,8 @@ export function Layout() {
               <button
                 className="flex items-center gap-2 rounded-full border border-slate-200 py-1 pl-1 pr-3 hover:bg-slate-50"
                 onClick={() => setProfileOpen(true)}
-                aria-label="Open profile"
-                title="Profile, payment & calendar"
+                aria-label={t('nav.openProfile')}
+                title={t('nav.profileTitle')}
               >
                 <Avatar name={user.fullName} url={user.avatarUrl} size={32} />
                 <span className="hidden text-xs font-semibold text-emerald-700 sm:inline">
@@ -74,7 +76,7 @@ export function Layout() {
                 `whitespace-nowrap rounded-lg px-3 py-1 text-xs font-medium ${isActive ? 'bg-brand-100 text-brand-700' : 'text-slate-600'}`
               }
             >
-              {item.label}
+              {t(`nav.${item.key}`)}
             </NavLink>
           ))}
           {user?.role === 'ADMIN' && (
@@ -84,7 +86,7 @@ export function Layout() {
                 `whitespace-nowrap rounded-lg px-3 py-1 text-xs font-medium ${isActive ? 'bg-brand-100 text-brand-700' : 'text-slate-600'}`
               }
             >
-              Admin
+              {t('nav.admin')}
             </NavLink>
           )}
         </nav>
