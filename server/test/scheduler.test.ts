@@ -34,6 +34,8 @@ test('scheduler emits a reminder to subscribers and is idempotent across ticks',
   const planner = mkUser('plan@x.com', 'Planner', '1990-05-05');
   repo.createUser(subject);
   repo.createUser(planner);
+  repo.sendFriendRequest(planner.id, subject.id);
+  repo.acceptFriendRequest(subject.id, planner.id);
   repo.upsertSubscription({ id: randomUUID(), subscriberId: planner.id, kind: 'FRIEND', targetId: subject.id, calendarSync: false, createdAt: '' });
 
   const svc = new NotificationService(repo, schedConfig);

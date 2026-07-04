@@ -101,6 +101,21 @@ export interface GroupMemberView {
   daysUntilBirthday: number;
 }
 
+export type GroupInvitationStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED';
+
+export interface GroupInvitationView {
+  id: string;
+  groupId: string;
+  groupName: string;
+  inviterId: string;
+  inviterName: string;
+  inviteeId: string;
+  inviteeName: string;
+  status: GroupInvitationStatus;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
 export type WishlistStatus = 'OPEN' | 'SUGGESTED' | 'RESERVED';
 
 export interface WishlistItem {

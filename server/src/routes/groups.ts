@@ -17,6 +17,22 @@ export function groupRoutes(ctx: AppContext): Router {
     res.json({ groups: repo.listGroups(req.principal!.userId) });
   });
 
+  router.get('/invitations', (req, res) => {
+    res.json({ invitations: repo.listPendingGroupInvitationsForUser(req.principal!.userId) });
+  });
+
+  router.post('/invitations/:invitationId/accept', (req, res) => {
+    const invitation = repo.acceptGroupInvitation(req.params.invitationId, req.principal!.userId);
+    if (!invitation) return res.status(404).json({ error: 'Pending invitation not found' });
+    return res.json({ invitation, group: repo.getGroup(invitation.groupId), members: repo.listGroupMembers(invitation.groupId) });
+  });
+
+  router.post('/invitations/:invitationId/decline', (req, res) => {
+    const declined = repo.declineGroupInvitation(req.params.invitationId, req.principal!.userId);
+    if (!declined) return res.status(404).json({ error: 'Pending invitation not found' });
+    return res.json({ ok: true });
+  });
+
   router.post('/', (req, res) => {
     const body = parseBody(groupSchema, req.body, res);
     if (!body) return;
@@ -36,7 +52,13 @@ export function groupRoutes(ctx: AppContext): Router {
   router.get('/:id', (req, res) => {
     const group = repo.getGroup(req.params.id);
     if (!group) return res.status(404).json({ error: 'Group not found' });
-    res.json({ group, members: repo.listGroupMembers(group.id), isMember: repo.isMember(group.id, req.principal!.userId) });
+    const isOwner = group.ownerId === req.principal!.userId;
+    res.json({
+      group,
+      members: repo.listGroupMembers(group.id),
+      isMember: repo.isMember(group.id, req.principal!.userId),
+      pendingInvitations: isOwner ? repo.listPendingGroupInvitationsByGroup(group.id) : [],
+    });
   });
 
   router.post('/:id/join', (req, res) => {
@@ -49,7 +71,7 @@ export function groupRoutes(ctx: AppContext): Router {
     return res.json({ ok: true });
   });
 
-  // Owner invite widget backend: owner directly grants membership to a user.
+  // Owner invite widget backend: creates a pending invitation. The invitee must accept before membership changes.
   router.post('/:id/invite', (req, res) => {
     const group = repo.getGroup(req.params.id);
     if (!group) return res.status(404).json({ error: 'Group not found' });
@@ -57,8 +79,9 @@ export function groupRoutes(ctx: AppContext): Router {
     const body = parseBody(inviteSchema, req.body, res);
     if (!body) return;
     if (!repo.findUserById(body.userId)) return res.status(404).json({ error: 'User not found' });
-    repo.addMember(group.id, body.userId);
-    return res.status(201).json({ members: repo.listGroupMembers(group.id) });
+    if (repo.isMember(group.id, body.userId)) return res.status(409).json({ error: 'User is already a member' });
+    const invitation = repo.createGroupInvitation(group.id, req.principal!.userId, body.userId);
+    return res.status(201).json({ invitation, pendingInvitations: repo.listPendingGroupInvitationsByGroup(group.id) });
   });
 
   router.post('/:id/leave', (req, res) => {

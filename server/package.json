@@ -1,9 +1,9 @@
 {
   "name": "bcms-server",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "private": true,
   "type": "module",
-  "description": "Birthday Celebration Management System \u2014 backend API, WebSocket chat, schedulers",
+  "description": "Birthday Celebration Management System — backend API, WebSocket chat, schedulers",
   "engines": {
     "node": ">=20"
   },

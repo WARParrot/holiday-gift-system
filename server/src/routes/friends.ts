@@ -37,9 +37,21 @@ export function friendRoutes(ctx: AppContext): Router {
     return res.json({ ok: true, state: repo.friendState(me, requester.id) });
   });
 
-  router.delete('/:userId', (req, res) => {
+  router.delete('/:userId', async (req, res) => {
     const me = req.principal!.userId;
-    repo.removeFriendship(me, req.params.userId);
+    const other = repo.findUserById(req.params.userId);
+    if (other) {
+      const myself = repo.findUserById(me);
+      const reciprocalSubs = [
+        ...repo.listSubscriptions(me).filter((s) => s.kind === 'FRIEND' && s.targetId === other.id),
+        ...repo.listSubscriptions(other.id).filter((s) => s.kind === 'FRIEND' && s.targetId === me),
+      ];
+      for (const sub of reciprocalSubs) {
+        const subject = sub.targetId === other.id ? other : myself;
+        if (subject) await ctx.calendar.removeSubjects(sub, [subject]);
+      }
+    }
+    repo.removeFriendshipAndDependentAccess(me, req.params.userId);
     return res.json({ ok: true });
   });
 

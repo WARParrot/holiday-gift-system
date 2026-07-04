@@ -8,6 +8,7 @@ import type {
   DirectoryUser,
   FriendCard,
   Group,
+  GroupInvitation,
   GroupMemberView,
   GroupWithMembers,
   GroupWithMeta,
@@ -81,12 +82,17 @@ export const api = {
   createGroup: (body: { name: string; description: string; visibility: 'PUBLIC' | 'INVITE' }) =>
     request<{ group: Group }>('/groups', { method: 'POST', body: JSON.stringify(body) }),
   group: (id: string) =>
-    request<{ group: Group; members: GroupMemberView[]; isMember: boolean }>(`/groups/${id}`),
+    request<{ group: Group; members: GroupMemberView[]; isMember: boolean; pendingInvitations: GroupInvitation[] }>(`/groups/${id}`),
   joinGroup: (id: string) => request<{ ok: true }>(`/groups/${id}/join`, { method: 'POST' }),
   leaveGroup: (id: string) =>
     request<{ ok: true; groupDeleted?: boolean; ownerTransferredTo?: string }>(`/groups/${id}/leave`, { method: 'POST' }),
   inviteToGroup: (groupId: string, userId: string) =>
-    request<{ members: GroupMemberView[] }>(`/groups/${groupId}/invite`, { method: 'POST', body: JSON.stringify({ userId }) }),
+    request<{ invitation: GroupInvitation; pendingInvitations: GroupInvitation[] }>(`/groups/${groupId}/invite`, { method: 'POST', body: JSON.stringify({ userId }) }),
+  groupInvitations: () => request<{ invitations: GroupInvitation[] }>('/groups/invitations'),
+  acceptGroupInvitation: (invitationId: string) =>
+    request<{ invitation: GroupInvitation; group: Group; members: GroupMemberView[] }>(`/groups/invitations/${invitationId}/accept`, { method: 'POST' }),
+  declineGroupInvitation: (invitationId: string) =>
+    request<{ ok: true }>(`/groups/invitations/${invitationId}/decline`, { method: 'POST' }),
 
   // wishlist
   wishlist: (userId: string) => request<{ items: WishlistItem[] }>(`/wishlist/${userId}`),

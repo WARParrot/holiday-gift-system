@@ -9,6 +9,7 @@ import type {
   ChatRoom,
   CrowdfundingPool,
   Group,
+  GroupInvitationView,
   GroupMemberView,
   GroupWithMeta,
   Notification,
@@ -250,6 +251,89 @@ export class Repository {
       .run(groupId, userId);
   }
 
+  createGroupInvitation(groupId: string, inviterId: string, inviteeId: string): GroupInvitationView {
+    const existing = this.db
+      .prepare('SELECT * FROM group_invitations WHERE group_id = ? AND invitee_id = ?')
+      .get(groupId, inviteeId) as Record<string, unknown> | undefined;
+    if (existing) {
+      if (existing.status !== 'PENDING') {
+        this.db
+          .prepare("UPDATE group_invitations SET inviter_id = ?, status = 'PENDING', created_at = datetime('now'), resolved_at = NULL WHERE id = ?")
+          .run(inviterId, existing.id);
+      }
+      return this.getGroupInvitation(existing.id as string)!;
+    }
+    const id = randomUUID();
+    this.db
+      .prepare("INSERT INTO group_invitations (id, group_id, inviter_id, invitee_id, status, created_at) VALUES (?, ?, ?, ?, 'PENDING', datetime('now'))")
+      .run(id, groupId, inviterId, inviteeId);
+    return this.getGroupInvitation(id)!;
+  }
+
+  getGroupInvitation(id: string): GroupInvitationView | undefined {
+    const r = this.db
+      .prepare(
+        `SELECT i.*, g.name AS group_name, inviter.full_name AS inviter_name, invitee.full_name AS invitee_name
+         FROM group_invitations i
+         JOIN groups g ON g.id = i.group_id
+         JOIN users inviter ON inviter.id = i.inviter_id
+         JOIN users invitee ON invitee.id = i.invitee_id
+         WHERE i.id = ?`,
+      )
+      .get(id) as Record<string, unknown> | undefined;
+    return r ? this.mapGroupInvitation(r) : undefined;
+  }
+
+  listPendingGroupInvitationsForUser(userId: string): GroupInvitationView[] {
+    const rows = this.db
+      .prepare(
+        `SELECT i.*, g.name AS group_name, inviter.full_name AS inviter_name, invitee.full_name AS invitee_name
+         FROM group_invitations i
+         JOIN groups g ON g.id = i.group_id
+         JOIN users inviter ON inviter.id = i.inviter_id
+         JOIN users invitee ON invitee.id = i.invitee_id
+         WHERE i.invitee_id = ? AND i.status = 'PENDING'
+         ORDER BY i.created_at DESC`,
+      )
+      .all(userId) as Record<string, unknown>[];
+    return rows.map((r) => this.mapGroupInvitation(r));
+  }
+
+  listPendingGroupInvitationsByGroup(groupId: string): GroupInvitationView[] {
+    const rows = this.db
+      .prepare(
+        `SELECT i.*, g.name AS group_name, inviter.full_name AS inviter_name, invitee.full_name AS invitee_name
+         FROM group_invitations i
+         JOIN groups g ON g.id = i.group_id
+         JOIN users inviter ON inviter.id = i.inviter_id
+         JOIN users invitee ON invitee.id = i.invitee_id
+         WHERE i.group_id = ? AND i.status = 'PENDING'
+         ORDER BY i.created_at DESC`,
+      )
+      .all(groupId) as Record<string, unknown>[];
+    return rows.map((r) => this.mapGroupInvitation(r));
+  }
+
+  acceptGroupInvitation(invitationId: string, inviteeId: string): GroupInvitationView | undefined {
+    const tx = this.db.transaction(() => {
+      const invitation = this.getGroupInvitation(invitationId);
+      if (!invitation || invitation.inviteeId !== inviteeId || invitation.status !== 'PENDING') return undefined;
+      this.addMember(invitation.groupId, inviteeId);
+      this.db
+        .prepare("UPDATE group_invitations SET status = 'ACCEPTED', resolved_at = datetime('now') WHERE id = ?")
+        .run(invitationId);
+      return this.getGroupInvitation(invitationId);
+    });
+    return tx();
+  }
+
+  declineGroupInvitation(invitationId: string, inviteeId: string): boolean {
+    const res = this.db
+      .prepare("UPDATE group_invitations SET status = 'DECLINED', resolved_at = datetime('now') WHERE id = ? AND invitee_id = ? AND status = 'PENDING'")
+      .run(invitationId, inviteeId);
+    return res.changes > 0;
+  }
+
   removeMember(groupId: string, userId: string): void {
     this.db.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').run(groupId, userId);
   }
@@ -433,6 +517,25 @@ export class Repository {
     this.db.prepare('DELETE FROM friendships WHERE user_low = ? AND user_high = ?').run(low, high);
   }
 
+  removeFriendshipAndDependentAccess(userA: string, userB: string): void {
+    const tx = this.db.transaction(() => {
+      this.removeFriendship(userA, userB);
+      this.db
+        .prepare("DELETE FROM subscriptions WHERE kind = 'FRIEND' AND ((subscriber_id = ? AND target_id = ?) OR (subscriber_id = ? AND target_id = ?))")
+        .run(userA, userB, userB, userA);
+      this.db
+        .prepare(
+          `DELETE FROM chat_participants
+           WHERE source = 'FRIEND' AND (
+             (user_id = ? AND room_id IN (SELECT id FROM chat_rooms WHERE subject_id = ?))
+             OR (user_id = ? AND room_id IN (SELECT id FROM chat_rooms WHERE subject_id = ?))
+           )`,
+        )
+        .run(userA, userB, userB, userA);
+    });
+    tx();
+  }
+
   areFriends(userA: string, userB: string): boolean {
     if (userA === userB) return false;
     const { low, high } = this.pairKey(userA, userB);
@@ -512,7 +615,15 @@ export class Repository {
   /** All subscriber ids that will be notified about a given subject user. */
   subscriberIdsForSubject(subjectId: string): string[] {
     const direct = this.db
-      .prepare("SELECT subscriber_id FROM subscriptions WHERE kind = 'FRIEND' AND target_id = ?")
+      .prepare(
+        `SELECT s.subscriber_id
+         FROM subscriptions s
+         JOIN friendships f
+           ON f.status = 'ACCEPTED'
+          AND f.user_low = CASE WHEN s.subscriber_id < s.target_id THEN s.subscriber_id ELSE s.target_id END
+          AND f.user_high = CASE WHEN s.subscriber_id < s.target_id THEN s.target_id ELSE s.subscriber_id END
+         WHERE s.kind = 'FRIEND' AND s.target_id = ?`,
+      )
       .all(subjectId) as { subscriber_id: string }[];
     const viaGroup = this.db
       .prepare(
@@ -930,6 +1041,21 @@ export class Repository {
       role: row.role as Role,
       balance: (row.balance as number) ?? 0,
       createdAt: row.created_at as string,
+    };
+  }
+
+  private mapGroupInvitation(r: Record<string, unknown>): GroupInvitationView {
+    return {
+      id: r.id as string,
+      groupId: r.group_id as string,
+      groupName: r.group_name as string,
+      inviterId: r.inviter_id as string,
+      inviterName: r.inviter_name as string,
+      inviteeId: r.invitee_id as string,
+      inviteeName: r.invitee_name as string,
+      status: r.status as GroupInvitationView['status'],
+      createdAt: r.created_at as string,
+      resolvedAt: (r.resolved_at as string) ?? null,
     };
   }
 

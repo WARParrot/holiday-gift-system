@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { DirectoryUser, Group, GroupMemberView } from '../types/domain';
+import type { DirectoryUser, Group, GroupInvitation, GroupMemberView } from '../types/domain';
 import { Avatar } from '../components/Avatar';
 import { Loading, ErrorNote } from '../components/Feedback';
 import { formatBirthdayCountdown } from '../components/format';
@@ -12,7 +12,7 @@ export function GroupDetailPage() {
   const { groupId } = useParams<{ groupId: string }>();
   const navigate = useNavigate();
   const me = useAuth((s) => s.user);
-  const [data, setData] = useState<{ group: Group; members: GroupMemberView[]; isMember: boolean } | null>(null);
+  const [data, setData] = useState<{ group: Group; members: GroupMemberView[]; isMember: boolean; pendingInvitations: GroupInvitation[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [subscribed, setSubscribed] = useState(false);
   const [calendarSync, setCalendarSync] = useState(false);
@@ -76,6 +76,16 @@ export function GroupDetailPage() {
       </div>
 
       {isOwner && <InviteWidget groupId={data.group.id} members={data.members} onInvited={load} />}
+      {isOwner && data.pendingInvitations.length > 0 && (
+        <div className="card mb-4">
+          <h2 className="mb-2 font-semibold">Pending invitations</h2>
+          <ul className="space-y-1 text-sm text-slate-600">
+            {data.pendingInvitations.map((i) => (
+              <li key={i.id}>⏳ {i.inviteeName} — invited by {i.inviterName}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <h2 className="mb-2 font-semibold">Members &amp; upcoming birthdays</h2>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -113,7 +123,7 @@ function InviteWidget({ groupId, members, onInvited }: { groupId: string; member
     try {
       await api.inviteToGroup(groupId, selected);
       setSelected('');
-      setMsg('Member added.');
+      setMsg('Invitation sent. The user will join only after accepting.');
       onInvited();
     } catch (err) {
       setMsg(err instanceof Error ? err.message : 'Invite failed');
@@ -125,13 +135,13 @@ function InviteWidget({ groupId, members, onInvited }: { groupId: string; member
   return (
     <div className="card mb-4">
       <h2 className="mb-2 font-semibold">Invite a member</h2>
-      <p className="mb-2 text-xs text-slate-400">As owner, add people directly — this is how invite-only groups grow.</p>
+      <p className="mb-2 text-xs text-slate-400">As owner, send an invitation. The person joins only after they accept.</p>
       <div className="flex gap-2">
         <select className="input" value={selected} onChange={(e) => setSelected(e.target.value)}>
           <option value="">Select a person…</option>
           {candidates.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
         </select>
-        <button className="btn-primary" disabled={busy || !selected} onClick={invite}>{busy ? 'Adding…' : 'Add'}</button>
+        <button className="btn-primary" disabled={busy || !selected} onClick={invite}>{busy ? 'Sending…' : 'Send invite'}</button>
       </div>
       {msg && <p className="mt-2 text-sm text-slate-500">{msg}</p>}
     </div>

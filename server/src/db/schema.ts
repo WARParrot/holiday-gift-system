@@ -77,6 +77,18 @@ CREATE TABLE IF NOT EXISTS group_members (
   PRIMARY KEY (group_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS group_invitations (
+  id         TEXT PRIMARY KEY,
+  group_id   TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  inviter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  invitee_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status     TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','ACCEPTED','DECLINED')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  resolved_at TEXT,
+  CHECK(inviter_id <> invitee_id),
+  UNIQUE(group_id, invitee_id)
+);
+
 CREATE TABLE IF NOT EXISTS wishlist_items (
   id          TEXT PRIMARY KEY,
   owner_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -176,6 +188,7 @@ CREATE TABLE IF NOT EXISTS pool_contributions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_group_invitations_invitee ON group_invitations(invitee_id, status);
 CREATE INDEX IF NOT EXISTS idx_wishlist_owner ON wishlist_items(owner_id);
 CREATE INDEX IF NOT EXISTS idx_subs_subscriber ON subscriptions(subscriber_id);
 CREATE INDEX IF NOT EXISTS idx_friendships_high ON friendships(user_high);
@@ -197,6 +210,20 @@ function applyMigrations(db: Db): void {
   if (!userCols.includes('balance')) {
     db.exec('ALTER TABLE users ADD COLUMN balance REAL NOT NULL DEFAULT 0');
   }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS group_invitations (
+      id         TEXT PRIMARY KEY,
+      group_id   TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      inviter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      invitee_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      status     TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','ACCEPTED','DECLINED')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      resolved_at TEXT,
+      CHECK(inviter_id <> invitee_id),
+      UNIQUE(group_id, invitee_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_group_invitations_invitee ON group_invitations(invitee_id, status);
+  `);
 }
 
 let singleton: Db | null = null;

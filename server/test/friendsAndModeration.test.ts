@@ -98,3 +98,48 @@ test('message CRUD: update changes body and delete removes message', () => {
   assert.equal(repo.getMessage(msg.id), undefined);
   assert.equal(repo.deleteMessage(msg.id), false);
 });
+
+
+test('group invitations stay pending until accepted', () => {
+  const repo = new Repository(openDatabase(':memory:'));
+  const owner = mkUser('owner-invite@x.com', 'Owner');
+  const invitee = mkUser('invitee@x.com', 'Invitee');
+  [owner, invitee].forEach((u) => repo.createUser(u));
+
+  const gid = randomUUID();
+  repo.createGroup({ id: gid, name: 'Secret', description: '', visibility: 'INVITE', ownerId: owner.id, createdAt: '' });
+  repo.addMember(gid, owner.id);
+
+  const invitation = repo.createGroupInvitation(gid, owner.id, invitee.id);
+  assert.equal(invitation.status, 'PENDING');
+  assert.equal(repo.isMember(gid, invitee.id), false, 'inviting does not directly add the user');
+  assert.deepEqual(repo.listPendingGroupInvitationsForUser(invitee.id).map((i) => i.id), [invitation.id]);
+
+  const accepted = repo.acceptGroupInvitation(invitation.id, invitee.id)!;
+  assert.equal(accepted.status, 'ACCEPTED');
+  assert.equal(repo.isMember(gid, invitee.id), true, 'accepting the invitation joins the group');
+  assert.deepEqual(repo.listPendingGroupInvitationsForUser(invitee.id), []);
+});
+
+test('cancelling friendship voids direct subscriptions and FRIEND chat access', () => {
+  const repo = new Repository(openDatabase(':memory:'));
+  const a = mkUser('cleanup-a@x.com', 'A');
+  const b = mkUser('cleanup-b@x.com', 'B');
+  [a, b].forEach((u) => repo.createUser(u));
+  repo.sendFriendRequest(a.id, b.id);
+  repo.acceptFriendRequest(b.id, a.id);
+  repo.upsertSubscription({ id: randomUUID(), subscriberId: a.id, kind: 'FRIEND', targetId: b.id, calendarSync: false, createdAt: '' });
+  repo.upsertSubscription({ id: randomUUID(), subscriberId: b.id, kind: 'FRIEND', targetId: a.id, calendarSync: false, createdAt: '' });
+  const roomAboutB = repo.getOrCreateRoomForSubject(b.id, randomUUID());
+  const roomAboutA = repo.getOrCreateRoomForSubject(a.id, randomUUID());
+  repo.addParticipant(roomAboutB.id, a.id, 'ORGANIZER', 'FRIEND');
+  repo.addParticipant(roomAboutA.id, b.id, 'ORGANIZER', 'FRIEND');
+
+  repo.removeFriendshipAndDependentAccess(a.id, b.id);
+
+  assert.equal(repo.areFriends(a.id, b.id), false);
+  assert.equal(repo.listSubscriptions(a.id).some((s) => s.kind === 'FRIEND' && s.targetId === b.id), false);
+  assert.equal(repo.listSubscriptions(b.id).some((s) => s.kind === 'FRIEND' && s.targetId === a.id), false);
+  assert.equal(repo.isParticipant(roomAboutB.id, a.id), false);
+  assert.equal(repo.isParticipant(roomAboutA.id, b.id), false);
+});

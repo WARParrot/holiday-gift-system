@@ -16,6 +16,24 @@ This repository is a **monorepo** with two packages:
 > Read it first — it explains *why* every subsystem is built the way it is,
 > including the secret-chat exclusion model and the crowdfunding pseudo-bank.
 
+## What's new in 1.6.1 (real group invites + friendship cleanup)
+
+This patch tightens the social flows added in 1.6:
+
+- **Group invites are real invitations.** Owner invite now creates a pending
+  `group_invitations` row; the invitee sees it on the Groups page and must
+  accept before they become a member. They can also decline. The group owner sees
+  pending invitations on the group detail page.
+- **Unfriending voids direct birthday subscriptions.** Cancelling a friendship
+  removes reciprocal `FRIEND` subscriptions and also asks connected calendars to
+  remove the corresponding synced birthday subjects.
+- **Unfriending revokes direct secret-chat access.** The former friend is removed
+  from the FRIEND-source participant grant for the other person’s secret chat,
+  so stale chat access does not survive the relationship cancellation.
+- **Notification fan-out ignores stale direct subscriptions.** Even if an old
+  `FRIEND` subscription row exists, reminders/chat notifications require an
+  accepted friendship at read time.
+
 ## What's new in 1.6 (friendship-gated subscriptions + chat/admin/group CRUD polish)
 
 This release applies the product-review fix list around dynamic admin state,
@@ -29,9 +47,10 @@ message CRUD, invite-only groups, scheduler ownership, and social authorization:
   own messages; both actions broadcast live over WebSocket (`message-updated` /
   `message-deleted`). Other participants cannot mutate someone else’s message.
 - **Admin has chat message moderation.** The Admin panel now lists secret-chat
-  rooms and lets admins edit/delete any message; moderation also live-broadcasts.
-- **Invite-only groups have an invite widget.** Group owners can add members
-  directly from the group detail page.
+  rooms and lets admins create/edit/delete any message; moderation also
+  live-broadcasts.
+- **Invite-only groups have an invite widget.** Group owners can invite people
+  from the group detail page.
 - **No orphan invite-only groups.** Leaving as the last member deletes the group;
   if an owner leaves while members remain, ownership transfers to a remaining
   member.

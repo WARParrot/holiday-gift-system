@@ -132,6 +132,8 @@ test('subscriberIdsForSubject never includes the subject themselves', () => {
   repo.addMember(groupId, subject.id);
   repo.addMember(groupId, a.id);
   repo.upsertSubscription({ id: randomUUID(), subscriberId: subject.id, kind: 'GROUP', targetId: groupId, calendarSync: false, createdAt: '' });
+  repo.sendFriendRequest(a.id, subject.id);
+  repo.acceptFriendRequest(subject.id, a.id);
   repo.upsertSubscription({ id: randomUUID(), subscriberId: a.id, kind: 'FRIEND', targetId: subject.id, calendarSync: false, createdAt: '' });
 
   const subscribers = repo.subscriberIdsForSubject(subject.id);

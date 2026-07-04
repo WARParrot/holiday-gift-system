@@ -242,3 +242,55 @@ test('HTTP: message history paginates with limit + before cursor', async () => {
     await h.close();
   }
 });
+
+
+test('HTTP: group invite creates pending invitation; accept joins group', async () => {
+  const h = await harness();
+  try {
+    const owner = mkUser('group-owner@x.com', 'Owner');
+    const invitee = mkUser('group-invitee@x.com', 'Invitee');
+    [owner, invitee].forEach((u) => h.repo.createUser(u));
+    const groupId = randomUUID();
+    h.repo.createGroup({ id: groupId, name: 'Invite Only', description: '', visibility: 'INVITE', ownerId: owner.id, createdAt: '' });
+    h.repo.addMember(groupId, owner.id);
+
+    const invite = await api(h, `/api/groups/${groupId}/invite`, { method: 'POST', token: token(h, owner), body: { userId: invitee.id } });
+    assert.equal(invite.status, 201);
+    const invitationId = invite.body.invitation.id as string;
+    assert.equal(h.repo.isMember(groupId, invitee.id), false, 'invite does not immediately add the user');
+
+    const pending = await api(h, '/api/groups/invitations', { token: token(h, invitee) });
+    assert.equal(pending.status, 200);
+    assert.deepEqual(pending.body.invitations.map((i: { id: string }) => i.id), [invitationId]);
+
+    const accept = await api(h, `/api/groups/invitations/${invitationId}/accept`, { method: 'POST', token: token(h, invitee) });
+    assert.equal(accept.status, 200);
+    assert.equal(h.repo.isMember(groupId, invitee.id), true);
+  } finally {
+    await h.close();
+  }
+});
+
+test('HTTP: unfriend voids friend subscription and removes FRIEND chat participant access', async () => {
+  const h = await harness();
+  try {
+    const a = mkUser('unfriend-a@x.com', 'A');
+    const b = mkUser('unfriend-b@x.com', 'B');
+    [a, b].forEach((u) => h.repo.createUser(u));
+    h.repo.sendFriendRequest(a.id, b.id);
+    h.repo.acceptFriendRequest(b.id, a.id);
+    h.repo.upsertSubscription({ id: randomUUID(), subscriberId: a.id, kind: 'FRIEND', targetId: b.id, calendarSync: false, createdAt: '' });
+    const room = h.repo.getOrCreateRoomForSubject(b.id, randomUUID());
+    h.repo.addParticipant(room.id, a.id, 'ORGANIZER', 'FRIEND');
+
+    const removed = await api(h, `/api/friends/${b.id}`, { method: 'DELETE', token: token(h, a) });
+    assert.equal(removed.status, 200);
+    assert.equal(h.repo.listSubscriptions(a.id).some((s) => s.kind === 'FRIEND' && s.targetId === b.id), false);
+    assert.equal(h.repo.isParticipant(room.id, a.id), false);
+
+    const read = await api(h, `/api/chat/rooms/${room.id}/messages`, { token: token(h, a) });
+    assert.equal(read.status, 403);
+  } finally {
+    await h.close();
+  }
+});

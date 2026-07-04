@@ -85,8 +85,9 @@ test('only subscribers of the subject are notified (req 3)', () => {
   const bystander = mkUser('by@x.com', 'Bystander');
   [subject, subscriber, bystander].forEach((u) => repo.createUser(u));
 
-  // Only `subscriber` subscribes to the subject's birthday; `bystander` does not
-  // (even though a bystander could otherwise open/post in the secret chat).
+  // Only `subscriber` is friends with and subscribes to the subject's birthday; `bystander` does not.
+  repo.sendFriendRequest(subscriber.id, subject.id);
+  repo.acceptFriendRequest(subject.id, subscriber.id);
   repo.upsertSubscription({
     id: randomUUID(),
     subscriberId: subscriber.id,
