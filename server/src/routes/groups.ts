@@ -3,22 +3,20 @@ import { randomUUID } from 'node:crypto';
 import type { AppContext } from './context.js';
 import { requireAuth } from '../middleware/auth.js';
 import { parseBody } from '../util/validate.js';
-import { groupSchema } from './schemas.js';
+import { groupSchema, inviteSchema } from './schemas.js';
 
 /**
- * Group creation, the master directory, membership, and member listings.
+ * Group creation, the master directory, membership, owner invites, and member listings.
  */
 export function groupRoutes(ctx: AppContext): Router {
   const router = Router();
   const { repo, config } = ctx;
   router.use(requireAuth(config, repo));
 
-  // GET /api/groups — master directory of all groups (scenario 1)
   router.get('/', (req, res) => {
     res.json({ groups: repo.listGroups(req.principal!.userId) });
   });
 
-  // POST /api/groups — any user can create a group
   router.post('/', (req, res) => {
     const body = parseBody(groupSchema, req.body, res);
     if (!body) return;
@@ -35,41 +33,51 @@ export function groupRoutes(ctx: AppContext): Router {
     res.status(201).json({ group });
   });
 
-  // GET /api/groups/:id — group detail with members + upcoming birthdays
   router.get('/:id', (req, res) => {
     const group = repo.getGroup(req.params.id);
-    if (!group) {
-      res.status(404).json({ error: 'Group not found' });
-      return;
-    }
-    res.json({
-      group,
-      members: repo.listGroupMembers(group.id),
-      isMember: repo.isMember(group.id, req.principal!.userId),
-    });
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+    res.json({ group, members: repo.listGroupMembers(group.id), isMember: repo.isMember(group.id, req.principal!.userId) });
   });
 
-  // POST /api/groups/:id/join
   router.post('/:id/join', (req, res) => {
     const group = repo.getGroup(req.params.id);
-    if (!group) {
-      res.status(404).json({ error: 'Group not found' });
-      return;
-    }
+    if (!group) return res.status(404).json({ error: 'Group not found' });
     if (group.visibility === 'INVITE' && group.ownerId !== req.principal!.userId) {
-      // For invite-only groups, membership is only auto-granted to the owner here.
-      // A fuller implementation would check an invitation token.
-      res.status(403).json({ error: 'This group is invite-only' });
-      return;
+      return res.status(403).json({ error: 'This group is invite-only' });
     }
     repo.addMember(group.id, req.principal!.userId);
-    res.json({ ok: true });
+    return res.json({ ok: true });
   });
 
-  // POST /api/groups/:id/leave
+  // Owner invite widget backend: owner directly grants membership to a user.
+  router.post('/:id/invite', (req, res) => {
+    const group = repo.getGroup(req.params.id);
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+    if (group.ownerId !== req.principal!.userId) return res.status(403).json({ error: 'Only the group owner can invite members' });
+    const body = parseBody(inviteSchema, req.body, res);
+    if (!body) return;
+    if (!repo.findUserById(body.userId)) return res.status(404).json({ error: 'User not found' });
+    repo.addMember(group.id, body.userId);
+    return res.status(201).json({ members: repo.listGroupMembers(group.id) });
+  });
+
   router.post('/:id/leave', (req, res) => {
-    repo.removeMember(req.params.id, req.principal!.userId);
-    res.json({ ok: true });
+    const group = repo.getGroup(req.params.id);
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+    const leaver = req.principal!.userId;
+    if (!repo.isMember(group.id, leaver)) return res.status(404).json({ error: 'You are not a member of this group' });
+
+    repo.removeMember(group.id, leaver);
+    const remaining = repo.memberIdsOfGroup(group.id);
+    if (remaining.length === 0) {
+      repo.deleteGroup(group.id);
+      return res.json({ ok: true, groupDeleted: true });
+    }
+    if (group.ownerId === leaver) {
+      repo.setGroupOwner(group.id, remaining[0]);
+      return res.json({ ok: true, ownerTransferredTo: remaining[0] });
+    }
+    return res.json({ ok: true });
   });
 
   return router;

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { AppContext } from './context.js';
 import { requireAuth } from '../middleware/auth.js';
 import { parseBody } from '../util/validate.js';
-import { contributeSchema } from './schemas.js';
+import { contributeSchema, messageEditSchema } from './schemas.js';
 import { canAccessRoom, checkEligibility } from '../services/chatAccess.js';
 import { processMockCharge } from '../services/mockBank.js';
 
@@ -119,6 +119,38 @@ export function chatRoutes(ctx: AppContext): Router {
     ctx.hub.current?.broadcastToRoom(req.params.roomId, { type: 'message', message });
     ctx.hub.current?.onMessagePosted(message);
     res.status(201).json({ message });
+  });
+
+  router.patch('/rooms/:roomId/messages/:messageId', (req, res) => {
+    const requesterId = req.principal!.userId;
+    const access = canAccessRoom(repo, req.params.roomId, requesterId);
+    if (!access.allowed) {
+      res.status(access.reason === 'ROOM_NOT_FOUND' ? 404 : 403).json({ error: 'This chat is not available to you' });
+      return;
+    }
+    const existing = repo.getMessage(req.params.messageId);
+    if (!existing || existing.roomId !== req.params.roomId) return res.status(404).json({ error: 'Message not found' });
+    if (existing.authorId !== requesterId) return res.status(403).json({ error: 'You can only edit your own messages' });
+    const body = parseBody(messageEditSchema, req.body, res);
+    if (!body) return;
+    const message = repo.updateMessage(existing.id, body.body)!;
+    ctx.hub.current?.broadcastToRoom(req.params.roomId, { type: 'message-updated', message });
+    return res.json({ message });
+  });
+
+  router.delete('/rooms/:roomId/messages/:messageId', (req, res) => {
+    const requesterId = req.principal!.userId;
+    const access = canAccessRoom(repo, req.params.roomId, requesterId);
+    if (!access.allowed) {
+      res.status(access.reason === 'ROOM_NOT_FOUND' ? 404 : 403).json({ error: 'This chat is not available to you' });
+      return;
+    }
+    const existing = repo.getMessage(req.params.messageId);
+    if (!existing || existing.roomId !== req.params.roomId) return res.status(404).json({ error: 'Message not found' });
+    if (existing.authorId !== requesterId) return res.status(403).json({ error: 'You can only delete your own messages' });
+    repo.deleteMessage(existing.id);
+    ctx.hub.current?.broadcastToRoom(req.params.roomId, { type: 'message-deleted', id: existing.id, roomId: req.params.roomId });
+    return res.json({ ok: true });
   });
 
   // GET /api/chat/rooms/:roomId/pool — pool + contributions

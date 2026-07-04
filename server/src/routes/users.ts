@@ -78,6 +78,7 @@ export function userRoutes(ctx: AppContext): Router {
       groups,
       wishlist,
       secretChat,
+      friendState: repo.friendState(requesterId, subject.id),
       isSelf: subject.id === requesterId,
     });
   });

@@ -23,6 +23,8 @@ function mkUser(email: string, name: string, birthdate: string): UserRow {
 
 /** Give `subscriber` a FRIEND subscription to `subject`. */
 function subscribeFriend(repo: Repository, subscriberId: string, subjectId: string): void {
+  repo.sendFriendRequest(subscriberId, subjectId);
+  repo.acceptFriendRequest(subjectId, subscriberId);
   repo.upsertSubscription({
     id: randomUUID(),
     subscriberId,

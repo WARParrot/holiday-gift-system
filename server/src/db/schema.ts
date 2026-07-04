@@ -96,7 +96,20 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   target_id     TEXT NOT NULL,
   calendar_sync INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE (subscriber_id, kind, target_id)
+  UNIQUE(subscriber_id, kind, target_id)
+);
+
+CREATE TABLE IF NOT EXISTS friendships (
+  id            TEXT PRIMARY KEY,
+  requester_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  addressee_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_low      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_high     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status        TEXT NOT NULL CHECK (status IN ('PENDING','ACCEPTED')),
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  accepted_at   TEXT,
+  CHECK(requester_id <> addressee_id),
+  UNIQUE(user_low, user_high)
 );
 
 CREATE TABLE IF NOT EXISTS notifications (
@@ -165,6 +178,8 @@ CREATE TABLE IF NOT EXISTS pool_contributions (
 CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_wishlist_owner ON wishlist_items(owner_id);
 CREATE INDEX IF NOT EXISTS idx_subs_subscriber ON subscriptions(subscriber_id);
+CREATE INDEX IF NOT EXISTS idx_friendships_high ON friendships(user_high);
+CREATE INDEX IF NOT EXISTS idx_friendships_requester ON friendships(requester_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_room ON chat_messages(room_id);
 CREATE INDEX IF NOT EXISTS idx_chat_participants_user ON chat_participants(user_id);

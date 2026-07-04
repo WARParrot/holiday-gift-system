@@ -128,6 +128,21 @@ export interface Subscription {
   createdAt: string;
 }
 
+export type FriendshipStatus = 'PENDING' | 'ACCEPTED';
+
+export interface Friendship {
+  id: string;
+  requesterId: string;
+  addresseeId: string;
+  userLow: string;
+  userHigh: string;
+  status: FriendshipStatus;
+  createdAt: string;
+  acceptedAt: string | null;
+}
+
+export type FriendState = 'none' | 'pending_incoming' | 'pending_outgoing' | 'friends';
+
 export type NotificationType =
   | 'REMINDER'
   | 'POOL_OPENED'
@@ -228,6 +243,8 @@ export type WsServerFrame =
   | { type: 'ready'; userId: string }
   | { type: 'joined'; roomId: string; messages: ChatMessage[] }
   | { type: 'message'; message: ChatMessage }
+  | { type: 'message-updated'; message: ChatMessage }
+  | { type: 'message-deleted'; id: string; roomId: string }
   | { type: 'pool'; pool: CrowdfundingPool }
   | { type: 'notification'; notification: Notification }
   | { type: 'notification-removed'; id: string }

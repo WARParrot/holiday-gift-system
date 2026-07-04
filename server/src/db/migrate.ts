@@ -104,6 +104,12 @@ function main(): void {
     priceMin: 100, priceMax: 180, status: 'OPEN', createdAt: new Date().toISOString(),
   });
 
+  // Friendships: Alice and Carol are accepted friends, which backs Alice's direct
+  // FRIEND subscription to Carol; Dave has sent Alice a pending request for the UI.
+  repo.sendFriendRequest(alice.id, carol.id);
+  repo.acceptFriendRequest(carol.id, alice.id);
+  repo.sendFriendRequest(dave.id, alice.id);
+
   // Subscriptions: alice tracks carol (friend) and the whole volleyball team.
   repo.upsertSubscription({
     id: randomUUID(), subscriberId: alice.id, kind: 'FRIEND', targetId: carol.id,

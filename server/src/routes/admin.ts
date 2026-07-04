@@ -10,6 +10,7 @@ import {
   adminImportSchema,
   adminPoolFinanceSchema,
   adminUserUpsertSchema,
+  messageEditSchema,
 } from './schemas.js';
 import { hashPassword } from '../util/auth.js';
 import type { UserRow } from '../types/domain.js';
@@ -20,8 +21,13 @@ import type { UserRow } from '../types/domain.js';
  */
 export function adminRoutes(ctx: AppContext): Router {
   const router = Router();
-  const { repo, config } = ctx;
+  const { repo, config, notifications } = ctx;
   router.use(requireAuth(config, repo), requireAdmin);
+
+  router.post('/run-scheduler', (_req, res) => {
+    const result = notifications.runTick();
+    res.json(result);
+  });
 
   // --- Users -------------------------------------------------------------
   router.get('/users', (_req, res) => {
@@ -229,6 +235,43 @@ export function adminRoutes(ctx: AppContext): Router {
   router.delete('/wishlists/item/:id', (req, res) => {
     repo.deleteWishlistItem(req.params.id);
     res.json({ ok: true });
+  });
+
+  // --- Chat messages (moderation) ---------------------------------------
+  router.get('/rooms', (_req, res) => {
+    res.json({ rooms: repo.listAllRooms() });
+  });
+
+  router.get('/rooms/:roomId/messages', (req, res) => {
+    if (!repo.getRoomById(req.params.roomId)) return res.status(404).json({ error: 'Room not found' });
+    res.json({ messages: repo.listMessages(req.params.roomId, { limit: 200 }) });
+  });
+
+  router.post('/rooms/:roomId/messages', (req, res) => {
+    if (!repo.getRoomById(req.params.roomId)) return res.status(404).json({ error: 'Room not found' });
+    const body = parseBody(messageEditSchema, req.body, res);
+    if (!body) return;
+    const message = repo.addMessage({ id: randomUUID(), roomId: req.params.roomId, authorId: req.principal!.userId, body: body.body });
+    ctx.hub.current?.broadcastToRoom(message.roomId, { type: 'message', message });
+    return res.status(201).json({ message });
+  });
+
+  router.patch('/messages/:messageId', (req, res) => {
+    const existing = repo.getMessage(req.params.messageId);
+    if (!existing) return res.status(404).json({ error: 'Message not found' });
+    const body = parseBody(messageEditSchema, req.body, res);
+    if (!body) return;
+    const message = repo.updateMessage(existing.id, body.body)!;
+    ctx.hub.current?.broadcastToRoom(message.roomId, { type: 'message-updated', message });
+    return res.json({ message });
+  });
+
+  router.delete('/messages/:messageId', (req, res) => {
+    const existing = repo.getMessage(req.params.messageId);
+    if (!existing) return res.status(404).json({ error: 'Message not found' });
+    repo.deleteMessage(existing.id);
+    ctx.hub.current?.broadcastToRoom(existing.roomId, { type: 'message-deleted', id: existing.id, roomId: existing.roomId });
+    return res.json({ ok: true });
   });
 
   // --- Data portability --------------------------------------------------

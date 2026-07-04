@@ -70,6 +70,12 @@ export const api = {
   directory: () => request<{ users: DirectoryUser[] }>('/users'),
   friendCard: (userId: string) => request<FriendCard>(`/users/${userId}/card`),
 
+  // friends
+  friends: () => request<{ friends: PublicUser[]; incoming: PublicUser[]; outgoing: PublicUser[] }>('/friends'),
+  sendFriendRequest: (userId: string) => request<{ result: string; state: string }>(`/friends/request/${userId}`, { method: 'POST' }),
+  acceptFriend: (userId: string) => request<{ ok: true; state: string }>(`/friends/accept/${userId}`, { method: 'POST' }),
+  removeFriend: (userId: string) => request<{ ok: true }>(`/friends/${userId}`, { method: 'DELETE' }),
+
   // groups
   groups: () => request<{ groups: GroupWithMeta[] }>('/groups'),
   createGroup: (body: { name: string; description: string; visibility: 'PUBLIC' | 'INVITE' }) =>
@@ -77,7 +83,10 @@ export const api = {
   group: (id: string) =>
     request<{ group: Group; members: GroupMemberView[]; isMember: boolean }>(`/groups/${id}`),
   joinGroup: (id: string) => request<{ ok: true }>(`/groups/${id}/join`, { method: 'POST' }),
-  leaveGroup: (id: string) => request<{ ok: true }>(`/groups/${id}/leave`, { method: 'POST' }),
+  leaveGroup: (id: string) =>
+    request<{ ok: true; groupDeleted?: boolean; ownerTransferredTo?: string }>(`/groups/${id}/leave`, { method: 'POST' }),
+  inviteToGroup: (groupId: string, userId: string) =>
+    request<{ members: GroupMemberView[] }>(`/groups/${groupId}/invite`, { method: 'POST', body: JSON.stringify({ userId }) }),
 
   // wishlist
   wishlist: (userId: string) => request<{ items: WishlistItem[] }>(`/wishlist/${userId}`),
@@ -100,7 +109,6 @@ export const api = {
   notifications: () => request<{ notifications: AppNotification[]; unread: number }>('/notifications'),
   markNotificationRead: (id: string) => request<{ ok: true }>(`/notifications/${id}/read`, { method: 'POST' }),
   markAllRead: () => request<{ ok: true }>('/notifications/read-all', { method: 'POST' }),
-  runScheduler: () => request<{ reminders: number; pools: number }>('/notifications/run-scheduler', { method: 'POST' }),
 
   // chat + crowdfunding
   joinSubjectRoom: (subjectId: string) =>
@@ -117,12 +125,17 @@ export const api = {
   },
   sendMessage: (roomId: string, body: string) =>
     request<{ message: ChatMessage }>(`/chat/rooms/${roomId}/messages`, { method: 'POST', body: JSON.stringify({ body }) }),
+  editMessage: (roomId: string, messageId: string, body: string) =>
+    request<{ message: ChatMessage }>(`/chat/rooms/${roomId}/messages/${messageId}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
+  deleteMessage: (roomId: string, messageId: string) =>
+    request<{ ok: true }>(`/chat/rooms/${roomId}/messages/${messageId}`, { method: 'DELETE' }),
   roomPool: (roomId: string) =>
     request<{ pool: CrowdfundingPool | null; contributions: PoolContribution[] }>(`/chat/rooms/${roomId}/pool`),
   contribute: (roomId: string, amount: number) =>
     request<{ pool: CrowdfundingPool; txRef: string; balance: number }>(`/chat/rooms/${roomId}/pool/contribute`, { method: 'POST', body: JSON.stringify({ amount }) }),
 
   // admin
+  adminRunScheduler: () => request<{ reminders: number; pools: number }>('/admin/run-scheduler', { method: 'POST' }),
   adminUsers: () => request<{ users: PublicUser[] }>('/admin/users'),
   adminDeleteUser: (id: string) => request<{ ok: true }>(`/admin/users/${id}`, { method: 'DELETE' }),
   adminExport: (format: 'json' | 'csv') => request<unknown>(`/admin/export?format=${format}`),
@@ -179,6 +192,15 @@ export const api = {
     request<{ members: GroupMemberView[] }>(`/admin/groups/${groupId}/members`, { method: 'POST', body: JSON.stringify({ userId }) }),
   adminRemoveGroupMember: (groupId: string, userId: string) =>
     request<{ members: GroupMemberView[] }>(`/admin/groups/${groupId}/members/${userId}`, { method: 'DELETE' }),
+
+  // admin — chat moderation
+  adminRooms: () => request<{ rooms: Array<ChatRoomLite & { messageCount: number; participantCount: number }> }>('/admin/rooms'),
+  adminRoomMessages: (roomId: string) => request<{ messages: ChatMessage[] }>(`/admin/rooms/${roomId}/messages`),
+  adminCreateMessage: (roomId: string, body: string) =>
+    request<{ message: ChatMessage }>(`/admin/rooms/${roomId}/messages`, { method: 'POST', body: JSON.stringify({ body }) }),
+  adminEditMessage: (messageId: string, body: string) =>
+    request<{ message: ChatMessage }>(`/admin/messages/${messageId}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
+  adminDeleteMessage: (messageId: string) => request<{ ok: true }>(`/admin/messages/${messageId}`, { method: 'DELETE' }),
 };
 
 export interface ChatRoomLite {

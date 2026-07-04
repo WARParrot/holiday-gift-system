@@ -2,10 +2,10 @@ import { Router } from 'express';
 import type { AppContext } from './context.js';
 import { requireAuth } from '../middleware/auth.js';
 
-/** In-app notification panel feed + mark-read + a demo scheduler trigger. */
+/** In-app notification panel feed + mark-read. The scheduler runs automatically server-side. */
 export function notificationRoutes(ctx: AppContext): Router {
   const router = Router();
-  const { repo, config, notifications } = ctx;
+  const { repo, config } = ctx;
   router.use(requireAuth(config, repo));
 
   // GET /api/notifications
@@ -24,12 +24,6 @@ export function notificationRoutes(ctx: AppContext): Router {
   router.post('/read-all', (req, res) => {
     repo.markAllNotificationsRead(req.principal!.userId);
     res.json({ ok: true });
-  });
-
-  // POST /api/notifications/run-scheduler — manual tick (useful for demos/tests)
-  router.post('/run-scheduler', (_req, res) => {
-    const result = notifications.runTick();
-    res.json(result);
   });
 
   return router;

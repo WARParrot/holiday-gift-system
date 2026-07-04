@@ -83,6 +83,8 @@ test('HTTP: a stranger gets 403 joining a subject chat; an eligible friend gets 
     const friend = mkUser('friend@x.com', 'Friend');
     [subject, stranger, friend].forEach((u) => h.repo.createUser(u));
     // friend subscribes to subject → eligible.
+    h.repo.sendFriendRequest(friend.id, subject.id);
+    h.repo.acceptFriendRequest(subject.id, friend.id);
     h.repo.upsertSubscription({ id: randomUUID(), subscriberId: friend.id, kind: 'FRIEND', targetId: subject.id, calendarSync: false, createdAt: '' });
 
     // Stranger: no relationship → 403, and NO room is created as a side effect.
@@ -123,6 +125,8 @@ test('HTTP: GET friend card does NOT auto-create a room (no GET-side mutation)',
     const subject = mkUser('subj@x.com', 'Subject');
     const friend = mkUser('friend@x.com', 'Friend');
     [subject, friend].forEach((u) => h.repo.createUser(u));
+    h.repo.sendFriendRequest(friend.id, subject.id);
+    h.repo.acceptFriendRequest(subject.id, friend.id);
     h.repo.upsertSubscription({ id: randomUUID(), subscriberId: friend.id, kind: 'FRIEND', targetId: subject.id, calendarSync: false, createdAt: '' });
 
     const card = await api(h, `/api/users/${subject.id}/card`, { token: token(h, friend) });
@@ -184,6 +188,8 @@ test('HTTP: REST-sent chat message notifies subscribers (WS/REST parity)', async
     [subject, organizer, subscriber].forEach((u) => h.repo.createUser(u));
     // Both organizer and subscriber subscribe to the subject.
     for (const u of [organizer, subscriber]) {
+      h.repo.sendFriendRequest(u.id, subject.id);
+      h.repo.acceptFriendRequest(subject.id, u.id);
       h.repo.upsertSubscription({ id: randomUUID(), subscriberId: u.id, kind: 'FRIEND', targetId: subject.id, calendarSync: false, createdAt: '' });
     }
 
@@ -213,6 +219,8 @@ test('HTTP: message history paginates with limit + before cursor', async () => {
     const subject = mkUser('subj@x.com', 'Subject');
     const organizer = mkUser('org@x.com', 'Organizer');
     [subject, organizer].forEach((u) => h.repo.createUser(u));
+    h.repo.sendFriendRequest(organizer.id, subject.id);
+    h.repo.acceptFriendRequest(subject.id, organizer.id);
     h.repo.upsertSubscription({ id: randomUUID(), subscriberId: organizer.id, kind: 'FRIEND', targetId: subject.id, calendarSync: false, createdAt: '' });
     const join = await api(h, `/api/chat/subject/${subject.id}/room/join`, { method: 'POST', token: token(h, organizer) });
     const roomId = join.body.room.id as string;

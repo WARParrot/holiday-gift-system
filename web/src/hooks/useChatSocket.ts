@@ -57,6 +57,12 @@ export function useChatSocket(roomId: string | null): UseChatSocketResult {
         case 'message':
           setMessages((prev) => (prev.some((m) => m.id === frame.message.id) ? prev : [...prev, frame.message]));
           break;
+        case 'message-updated':
+          setMessages((prev) => prev.map((m) => (m.id === frame.message.id ? frame.message : m)));
+          break;
+        case 'message-deleted':
+          setMessages((prev) => prev.filter((m) => m.id !== frame.id));
+          break;
         case 'pool':
           setPoolState(frame.pool);
           break;

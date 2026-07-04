@@ -1,9 +1,9 @@
 {
   "name": "bcms-web",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "type": "module",
-  "description": "Birthday Celebration Management System — React + TypeScript web client",
+  "description": "Birthday Celebration Management System \u2014 React + TypeScript web client",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

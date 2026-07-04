@@ -29,6 +29,10 @@ export const groupSchema = z.object({
   visibility: z.enum(['PUBLIC', 'INVITE']).default('PUBLIC'),
 });
 
+export const inviteSchema = z.object({
+  userId: z.string().min(1),
+});
+
 export const wishlistCreateSchema = z.object({
   title: z.string().min(1),
   description: z.string().default(''),
@@ -53,6 +57,10 @@ export const subscribeSchema = z.object({
 
 export const contributeSchema = z.object({
   amount: z.number().positive(),
+});
+
+export const messageEditSchema = z.object({
+  body: z.string().trim().min(1).max(4000),
 });
 
 export const topUpSchema = z.object({

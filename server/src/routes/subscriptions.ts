@@ -39,6 +39,10 @@ export function subscriptionRoutes(ctx: AppContext): Router {
         res.status(400).json({ error: 'You cannot subscribe to your own birthday' });
         return;
       }
+      if (!repo.areFriends(me, target.id)) {
+        res.status(403).json({ error: 'You must be friends before subscribing to this person' });
+        return;
+      }
       subjects = [target];
     } else {
       const group = repo.getGroup(body.targetId);

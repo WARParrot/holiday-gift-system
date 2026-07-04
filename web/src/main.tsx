@@ -10,6 +10,7 @@ import { DirectoryPage } from './pages/DirectoryPage';
 import { GroupsPage } from './pages/GroupsPage';
 import { GroupDetailPage } from './pages/GroupDetailPage';
 import { FriendCardPage } from './pages/FriendCardPage';
+import { FriendsPage } from './pages/FriendsPage';
 import { SubscriptionsPage } from './pages/SubscriptionsPage';
 import { WishlistPage } from './pages/WishlistPage';
 import { ProfilePage } from './pages/ProfilePage';
@@ -75,6 +76,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <Route path="/groups" element={<GroupsPage />} />
           <Route path="/groups/:groupId" element={<GroupDetailPage />} />
           <Route path="/friends/:userId" element={<FriendCardPage />} />
+          <Route path="/friends" element={<FriendsPage />} />
           <Route path="/subscriptions" element={<SubscriptionsPage />} />
           <Route path="/wishlist" element={<WishlistPage />} />
           <Route path="/profile" element={<ProfilePage />} />

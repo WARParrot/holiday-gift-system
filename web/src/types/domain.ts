@@ -156,6 +156,8 @@ export interface PoolContribution {
   createdAt: string;
 }
 
+export type FriendStatus = 'none' | 'pending_incoming' | 'pending_outgoing' | 'friends';
+
 export interface FriendCard {
   user: PublicUser;
   daysUntilBirthday: number;
@@ -164,6 +166,7 @@ export interface FriendCard {
   secretChat:
     | { visible: true; roomId: string }
     | { visible: false; eligible: boolean };
+  friendState: FriendStatus;
   isSelf: boolean;
 }
 
@@ -171,6 +174,8 @@ export type WsServerFrame =
   | { type: 'ready'; userId: string }
   | { type: 'joined'; roomId: string; messages: ChatMessage[] }
   | { type: 'message'; message: ChatMessage }
+  | { type: 'message-updated'; message: ChatMessage }
+  | { type: 'message-deleted'; id: string; roomId: string }
   | { type: 'pool'; pool: CrowdfundingPool }
   | { type: 'notification'; notification: AppNotification }
   | { type: 'notification-removed'; id: string }

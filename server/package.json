@@ -1,10 +1,12 @@
 {
   "name": "bcms-server",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "type": "module",
-  "description": "Birthday Celebration Management System — backend API, WebSocket chat, schedulers",
-  "engines": { "node": ">=20" },
+  "description": "Birthday Celebration Management System \u2014 backend API, WebSocket chat, schedulers",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "migrate": "tsx src/db/migrate.ts",
     "dev": "tsx watch src/index.ts",

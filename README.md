@@ -16,6 +16,32 @@ This repository is a **monorepo** with two packages:
 > Read it first — it explains *why* every subsystem is built the way it is,
 > including the secret-chat exclusion model and the crowdfunding pseudo-bank.
 
+## What's new in 1.6 (friendship-gated subscriptions + chat/admin/group CRUD polish)
+
+This release applies the product-review fix list around dynamic admin state,
+message CRUD, invite-only groups, scheduler ownership, and social authorization:
+
+- **Direct FRIEND subscriptions now require accepted friendship.** Added mutual
+  friend requests (send / accept / decline / unfriend), a Friends page, Friend
+  Card request controls, and server enforcement. A direct subscription alone no
+  longer self-grants secret-chat eligibility.
+- **Users have CRUD over their own chat messages.** Authors can edit/delete their
+  own messages; both actions broadcast live over WebSocket (`message-updated` /
+  `message-deleted`). Other participants cannot mutate someone else’s message.
+- **Admin has chat message moderation.** The Admin panel now lists secret-chat
+  rooms and lets admins edit/delete any message; moderation also live-broadcasts.
+- **Invite-only groups have an invite widget.** Group owners can add members
+  directly from the group detail page.
+- **No orphan invite-only groups.** Leaving as the last member deletes the group;
+  if an owner leaves while members remain, ownership transfers to a remaining
+  member.
+- **Scheduler trigger moved off user subscriptions.** The Subscriptions page no
+  longer exposes “Run reminder scheduler”; scheduling remains automatic, with a
+  manual admin-only demo/test trigger.
+- **Admin self-balance edits update live UI state.** Editing the logged-in admin’s
+  own wallet balance refreshes the auth store so the header balance updates
+  immediately.
+
 ## What's new in 1.5 (Yandex calendar sync corrected to CalDAV app-password)
 
 Fixes a real integration bug: the v1.3/1.4 Yandex adapter authenticated CalDAV

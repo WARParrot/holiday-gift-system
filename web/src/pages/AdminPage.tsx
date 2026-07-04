@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api/client';
+import { api, type ChatRoomLite } from '../api/client';
 import { useAuth } from '../store/auth';
-import type { CrowdfundingPool, GroupMemberView, GroupWithMembers, PublicUser } from '../types/domain';
+import type { ChatMessage, CrowdfundingPool, GroupMemberView, GroupWithMembers, PublicUser } from '../types/domain';
 import { Loading, ErrorNote } from '../components/Feedback';
 
-type Tab = 'users' | 'groups' | 'pools' | 'data';
+type Tab = 'users' | 'groups' | 'pools' | 'messages' | 'data';
 
 /** Restricted back-office: user CRUD + money editing + full group management + data portability. */
 export function AdminPage() {
@@ -19,7 +19,7 @@ export function AdminPage() {
     <div className="space-y-6">
       <h1 className="text-xl font-bold">Admin back-office</h1>
       <nav className="flex gap-1 border-b border-slate-200">
-        {(['users', 'groups', 'pools', 'data'] as Tab[]).map((t) => (
+        {(['users', 'groups', 'pools', 'messages', 'data'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -32,6 +32,7 @@ export function AdminPage() {
       {tab === 'users' && <UsersTab />}
       {tab === 'groups' && <GroupsTab />}
       {tab === 'pools' && <PoolsTab />}
+      {tab === 'messages' && <MessagesTab />}
       {tab === 'data' && <DataTab />}
     </div>
   );
@@ -118,12 +119,16 @@ function BalanceEditor({ user, onClose, onSaved }: { user: PublicUser; onClose: 
   const [memo, setMemo] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { user: authUser, token, setSession } = useAuth();
 
   async function save() {
     setBusy(true);
     setError(null);
     try {
-      await api.adminSetBalance(user.id, Number(amount), mode, memo);
+      const res = await api.adminSetBalance(user.id, Number(amount), mode, memo);
+      if (authUser && token && res.user.id === authUser.id) {
+        setSession(token, { ...authUser, balance: res.user.balance });
+      }
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed');
@@ -410,6 +415,118 @@ function PoolEditor({ pool, onSaved }: { pool: CrowdfundingPool & { contribution
 }
 
 // ---- Data portability -----------------------------------------------------
+// ---- Chat moderation ------------------------------------------------------
+function MessagesTab() {
+  const [rooms, setRooms] = useState<Array<ChatRoomLite & { messageCount: number; participantCount: number }> | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const [newMessage, setNewMessage] = useState('');
+  const [schedulerMsg, setSchedulerMsg] = useState<string | null>(null);
+
+  async function loadRooms() {
+    try {
+      setRooms((await api.adminRooms()).rooms);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Load failed');
+    }
+  }
+  useEffect(() => { void loadRooms(); }, []);
+
+  async function openRoom(roomId: string) {
+    setSelected(roomId);
+    setMessages((await api.adminRoomMessages(roomId)).messages);
+  }
+  async function saveEdit(m: ChatMessage) {
+    await api.adminEditMessage(m.id, draft.trim());
+    setEditingId(null);
+    if (selected) setMessages((await api.adminRoomMessages(selected)).messages);
+  }
+  async function createMessage() {
+    if (!selected || !newMessage.trim()) return;
+    await api.adminCreateMessage(selected, newMessage.trim());
+    setNewMessage('');
+    setMessages((await api.adminRoomMessages(selected)).messages);
+    void loadRooms();
+  }
+  async function remove(m: ChatMessage) {
+    if (!confirm('Delete this message?')) return;
+    await api.adminDeleteMessage(m.id);
+    if (selected) setMessages((await api.adminRoomMessages(selected)).messages);
+    void loadRooms();
+  }
+  async function runScheduler() {
+    const r = await api.adminRunScheduler();
+    setSchedulerMsg(`Scheduler ran: ${r.reminders} reminder(s), ${r.pools} pool(s) opened.`);
+  }
+
+  if (error) return <ErrorNote message={error} />;
+  if (!rooms) return <Loading />;
+
+  return (
+    <div className="space-y-4">
+      <section className="card flex items-center justify-between">
+        <div>
+          <h2 className="font-semibold">Reminder scheduler</h2>
+          <p className="text-xs text-slate-400">Runs automatically in production; this admin action is for demos/tests.</p>
+          {schedulerMsg && <p className="mt-1 text-xs text-brand-700">{schedulerMsg}</p>}
+        </div>
+        <button className="btn-ghost" onClick={runScheduler}>Run now</button>
+      </section>
+      <div className="grid gap-4 md:grid-cols-[16rem_1fr]">
+        <section className="card">
+          <h2 className="mb-2 font-semibold">Secret chat rooms ({rooms.length})</h2>
+          <ul className="space-y-1 text-sm">
+            {rooms.map((r) => (
+              <li key={r.id}>
+                <button onClick={() => openRoom(r.id)} className={`w-full rounded px-2 py-1 text-left ${selected === r.id ? 'bg-brand-50 text-brand-700' : 'hover:bg-slate-50'}`}>
+                  {r.subjectName}<span className="ml-1 text-xs text-slate-400">· {r.messageCount} msg</span>
+                </button>
+              </li>
+            ))}
+            {rooms.length === 0 && <li className="text-sm text-slate-400">No rooms yet.</li>}
+          </ul>
+        </section>
+        <section className="card">
+          <h2 className="mb-2 font-semibold">Messages</h2>
+          {selected && (
+            <div className="mb-3 flex gap-2">
+              <input className="input" placeholder="Create admin message in this room…" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} />
+              <button className="btn-primary" disabled={!newMessage.trim()} onClick={createMessage}>Create</button>
+            </div>
+          )}
+          {!selected && <p className="text-sm text-slate-400">Select a room to moderate its messages.</p>}
+          {selected && messages.length === 0 && <p className="text-sm text-slate-400">No messages in this room.</p>}
+          <ul className="space-y-2">
+            {messages.map((m) => (
+              <li key={m.id} className="rounded-lg border border-slate-100 p-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">{m.authorName}</span>
+                  <span className="flex gap-2 text-xs">
+                    <button className="text-brand-600 hover:underline" onClick={() => { setEditingId(m.id); setDraft(m.body); }}>edit</button>
+                    <button className="text-rose-600 hover:underline" onClick={() => remove(m)}>delete</button>
+                  </span>
+                </div>
+                {editingId === m.id ? (
+                  <div className="mt-1 space-y-1">
+                    <textarea className="input" rows={2} value={draft} onChange={(e) => setDraft(e.target.value)} />
+                    <div className="flex gap-2 text-xs">
+                      <button className="btn-primary py-1" onClick={() => saveEdit(m)}>Save</button>
+                      <button className="btn-ghost py-1" onClick={() => setEditingId(null)}>Cancel</button>
+                    </div>
+                  </div>
+                ) : <p className="mt-0.5 whitespace-pre-wrap text-slate-700">{m.body}</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function DataTab() {
   const [format, setFormat] = useState<'json' | 'csv'>('json');
   const [payload, setPayload] = useState('');

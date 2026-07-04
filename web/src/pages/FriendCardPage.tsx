@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../api/client';
-import type { FriendCard, WishlistItem } from '../types/domain';
+import type { FriendCard, FriendStatus, WishlistItem } from '../types/domain';
 import { useAuth } from '../store/auth';
 import { Avatar } from '../components/Avatar';
 import { Loading, ErrorNote } from '../components/Feedback';
@@ -68,14 +68,21 @@ export function FriendCardPage() {
 
           {!card.isSelf && (
             <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4">
-              <button className={subscribed ? 'btn-ghost' : 'btn-primary'} onClick={toggleSubscribe}>
-                {subscribed ? '✓ Subscribed' : 'Subscribe to reminders'}
-              </button>
-              {!subscribed && (
-                <label className="flex items-center gap-2 text-sm text-slate-600">
-                  <input type="checkbox" checked={calendarSync} onChange={(e) => setCalendarSync(e.target.checked)} />
-                  Add to my calendar
-                </label>
+              <FriendControls userId={card.user.id} name={card.user.fullName} state={card.friendState} onChanged={load} />
+              {card.friendState === 'friends' ? (
+                <>
+                  <button className={subscribed ? 'btn-ghost' : 'btn-primary'} onClick={toggleSubscribe}>
+                    {subscribed ? '✓ Subscribed' : 'Subscribe to reminders'}
+                  </button>
+                  {!subscribed && (
+                    <label className="flex items-center gap-2 text-sm text-slate-600">
+                      <input type="checkbox" checked={calendarSync} onChange={(e) => setCalendarSync(e.target.checked)} />
+                      Add to my calendar
+                    </label>
+                  )}
+                </>
+              ) : (
+                <span className="text-sm text-slate-400">Become friends to subscribe to reminders.</span>
               )}
             </div>
           )}
@@ -121,6 +128,36 @@ export function FriendCardPage() {
       </div>
     </div>
   );
+}
+
+function FriendControls({ userId, name, state, onChanged }: { userId: string; name: string; state: FriendStatus; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const run = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await fn();
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (state === 'friends') {
+    return <button className="btn-ghost" disabled={busy} onClick={() => run(() => api.removeFriend(userId))}>✓ Friends</button>;
+  }
+  if (state === 'pending_outgoing') {
+    return <button className="btn-ghost" disabled={busy} onClick={() => run(() => api.removeFriend(userId))}>Cancel request</button>;
+  }
+  if (state === 'pending_incoming') {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-slate-500">{name} sent you a friend request</span>
+        <button className="btn-primary" disabled={busy} onClick={() => run(() => api.acceptFriend(userId))}>Accept</button>
+        <button className="btn-ghost" disabled={busy} onClick={() => run(() => api.removeFriend(userId))}>Decline</button>
+      </div>
+    );
+  }
+  return <button className="btn-primary" disabled={busy} onClick={() => run(() => api.sendFriendRequest(userId))}>Add friend</button>;
 }
 
 function JoinSecretChat({ subjectId, onJoined }: { subjectId: string; onJoined: () => void }) {

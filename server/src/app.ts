@@ -14,6 +14,7 @@ import { userRoutes } from './routes/users.js';
 import { groupRoutes } from './routes/groups.js';
 import { wishlistRoutes } from './routes/wishlist.js';
 import { subscriptionRoutes } from './routes/subscriptions.js';
+import { friendRoutes } from './routes/friends.js';
 import { notificationRoutes } from './routes/notifications.js';
 import { chatRoutes } from './routes/chat.js';
 import { paymentRoutes } from './routes/payments.js';
@@ -96,6 +97,7 @@ export function buildApp(
   app.use('/api/groups', groupRoutes(ctx));
   app.use('/api/wishlist', wishlistRoutes(ctx));
   app.use('/api/subscriptions', subscriptionRoutes(ctx));
+  app.use('/api/friends', friendRoutes(ctx));
   app.use('/api/notifications', notificationRoutes(ctx));
   app.use('/api/chat', chatRoutes(ctx));
   app.use('/api/payments', paymentRoutes(ctx));

@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import { useChatSocket } from '../hooks/useChatSocket';
 import { useAuth } from '../store/auth';
 import { formatDateTime } from './format';
-import type { CrowdfundingPool, PoolContribution } from '../types/domain';
+import type { ChatMessage, CrowdfundingPool, PoolContribution } from '../types/domain';
 
 /**
  * Scenario 4 — Secret Chat Coordination (WebSocket validation).
@@ -37,15 +37,7 @@ export function SecretChat({ roomId, subjectName }: { roomId: string; subjectNam
         {messages.length === 0 && <p className="text-center text-sm text-slate-400">No messages yet. Start planning!</p>}
         {messages.map((m) => {
           const mine = m.authorId === me?.id;
-          return (
-            <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${mine ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-800'}`}>
-                {!mine && <p className="text-xs font-semibold opacity-70">{m.authorName}</p>}
-                <p>{m.body}</p>
-                <p className={`mt-0.5 text-[10px] ${mine ? 'text-white/70' : 'text-slate-400'}`}>{formatDateTime(m.createdAt)}</p>
-              </div>
-            </div>
-          );
+          return <MessageBubble key={m.id} roomId={roomId} message={m} mine={mine} />;
         })}
       </div>
 
@@ -66,6 +58,65 @@ export function SecretChat({ roomId, subjectName }: { roomId: string; subjectNam
           Send
         </button>
       </form>
+    </div>
+  );
+}
+
+function MessageBubble({ roomId, message, mine }: { roomId: string; message: ChatMessage; mine: boolean }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(message.body);
+  const [busy, setBusy] = useState(false);
+
+  async function saveEdit() {
+    const next = draft.trim();
+    if (!next || next === message.body) {
+      setEditing(false);
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.editMessage(roomId, message.id, next);
+      setEditing(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (!confirm('Delete this message?')) return;
+    setBusy(true);
+    try {
+      await api.deleteMessage(roomId, message.id);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={`group flex ${mine ? 'justify-end' : 'justify-start'}`}>
+      <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${mine ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-800'}`}>
+        {!mine && <p className="text-xs font-semibold opacity-70">{message.authorName}</p>}
+        {editing ? (
+          <div className="space-y-1">
+            <textarea className="w-full rounded bg-white/90 p-1 text-slate-800" rows={2} value={draft} onChange={(e) => setDraft(e.target.value)} />
+            <div className="flex gap-2 text-[11px]">
+              <button className="font-medium underline" disabled={busy} onClick={saveEdit}>Save</button>
+              <button className="opacity-80 underline" onClick={() => { setDraft(message.body); setEditing(false); }}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <p className="whitespace-pre-wrap">{message.body}</p>
+        )}
+        <div className="mt-0.5 flex items-center gap-2">
+          <span className={`text-[10px] ${mine ? 'text-white/70' : 'text-slate-400'}`}>{formatDateTime(message.createdAt)}</span>
+          {mine && !editing && (
+            <span className="hidden gap-2 text-[10px] text-white/80 group-hover:flex">
+              <button className="underline" onClick={() => { setDraft(message.body); setEditing(true); }}>edit</button>
+              <button className="underline" disabled={busy} onClick={remove}>delete</button>
+            </span>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

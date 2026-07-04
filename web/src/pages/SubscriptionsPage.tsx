@@ -6,15 +6,15 @@ import { Loading, ErrorNote, Empty } from '../components/Feedback';
 import { formatBirthdayCountdown } from '../components/format';
 
 /**
- * Scenario 2 — Subscription setup hub. Shows current subscriptions and lets the
- * user run the reminder/pool scheduler on demand (handy for demos).
+ * Scenario 2 — Subscription setup hub. Shows current subscriptions. Reminder
+ * and pool scheduling runs automatically on the server; manual scheduler ticks
+ * belong on the admin/demo surface, not a user's subscription page.
  */
 export function SubscriptionsPage() {
   const [subs, setSubs] = useState<Subscription[] | null>(null);
   const [users, setUsers] = useState<DirectoryUser[]>([]);
   const [groups, setGroups] = useState<GroupWithMeta[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [schedulerMsg, setSchedulerMsg] = useState<string | null>(null);
 
   const load = () => {
     Promise.all([api.subscriptions(), api.directory(), api.groups()])
@@ -32,11 +32,6 @@ export function SubscriptionsPage() {
     load();
   }
 
-  async function runScheduler() {
-    const r = await api.runScheduler();
-    setSchedulerMsg(`Scheduler ran: ${r.reminders} reminder(s), ${r.pools} pool(s) opened.`);
-  }
-
   if (error) return <ErrorNote message={error} />;
   if (!subs) return <Loading label="Loading subscriptions…" />;
 
@@ -51,13 +46,12 @@ export function SubscriptionsPage() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4">
         <h1 className="text-xl font-bold">My subscriptions</h1>
-        <button className="btn-ghost" onClick={runScheduler}>
-          Run reminder scheduler
-        </button>
+        <p className="mt-1 text-xs text-slate-400">
+          Birthday reminders and gift pools are opened automatically by the server as birthdays approach.
+        </p>
       </div>
-      {schedulerMsg && <p className="mb-3 rounded-lg bg-brand-50 p-2 text-sm text-brand-700">{schedulerMsg}</p>}
 
       {subs.length === 0 && <Empty label="You haven't subscribed to anyone yet. Open a Friend Card or Group to subscribe." />}
       <div className="space-y-3">

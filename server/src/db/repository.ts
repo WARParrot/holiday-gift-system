@@ -254,6 +254,15 @@ export class Repository {
     this.db.prepare('DELETE FROM group_members WHERE group_id = ? AND user_id = ?').run(groupId, userId);
   }
 
+  countGroupMembers(groupId: string): number {
+    const row = this.db.prepare('SELECT COUNT(*) AS count FROM group_members WHERE group_id = ?').get(groupId) as { count: number };
+    return row.count;
+  }
+
+  setGroupOwner(groupId: string, ownerId: string): void {
+    this.db.prepare('UPDATE groups SET owner_id = ? WHERE id = ?').run(ownerId, groupId);
+  }
+
   isMember(groupId: string, userId: string): boolean {
     const row = this.db
       .prepare('SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?')
@@ -382,6 +391,99 @@ export class Repository {
     return rows.map((r) => this.mapSubscription(r));
   }
 
+  // ---- friendships --------------------------------------------------------
+  private pairKey(a: string, b: string): { low: string; high: string } {
+    return a < b ? { low: a, high: b } : { low: b, high: a };
+  }
+
+  sendFriendRequest(requesterId: string, addresseeId: string): 'sent' | 'already_pending' | 'accepted_existing' | 'already_friends' {
+    if (requesterId === addresseeId) return 'already_friends';
+    const { low, high } = this.pairKey(requesterId, addresseeId);
+    const existing = this.db
+      .prepare('SELECT requester_id, addressee_id, status FROM friendships WHERE user_low = ? AND user_high = ?')
+      .get(low, high) as { requester_id: string; addressee_id: string; status: string } | undefined;
+    if (existing) {
+      if (existing.status === 'ACCEPTED') return 'already_friends';
+      if (existing.requester_id === requesterId) return 'already_pending';
+      this.acceptFriendRequest(requesterId, addresseeId);
+      return 'accepted_existing';
+    }
+    this.db
+      .prepare(
+        `INSERT INTO friendships (id, requester_id, addressee_id, user_low, user_high, status, created_at)
+         VALUES (?, ?, ?, ?, ?, 'PENDING', datetime('now'))`,
+      )
+      .run(randomUUID(), requesterId, addresseeId, low, high);
+    return 'sent';
+  }
+
+  acceptFriendRequest(accepterId: string, requesterId: string): boolean {
+    const { low, high } = this.pairKey(accepterId, requesterId);
+    const res = this.db
+      .prepare(
+        `UPDATE friendships SET status = 'ACCEPTED', accepted_at = datetime('now')
+         WHERE user_low = ? AND user_high = ? AND requester_id = ? AND addressee_id = ? AND status = 'PENDING'`,
+      )
+      .run(low, high, requesterId, accepterId);
+    return res.changes > 0;
+  }
+
+  removeFriendship(userA: string, userB: string): void {
+    const { low, high } = this.pairKey(userA, userB);
+    this.db.prepare('DELETE FROM friendships WHERE user_low = ? AND user_high = ?').run(low, high);
+  }
+
+  areFriends(userA: string, userB: string): boolean {
+    if (userA === userB) return false;
+    const { low, high } = this.pairKey(userA, userB);
+    return Boolean(
+      this.db.prepare("SELECT 1 FROM friendships WHERE user_low = ? AND user_high = ? AND status = 'ACCEPTED'").get(low, high),
+    );
+  }
+
+  friendState(viewerId: string, otherId: string): 'none' | 'pending_incoming' | 'pending_outgoing' | 'friends' {
+    if (viewerId === otherId) return 'none';
+    const { low, high } = this.pairKey(viewerId, otherId);
+    const row = this.db
+      .prepare('SELECT requester_id, addressee_id, status FROM friendships WHERE user_low = ? AND user_high = ?')
+      .get(low, high) as { requester_id: string; addressee_id: string; status: string } | undefined;
+    if (!row) return 'none';
+    if (row.status === 'ACCEPTED') return 'friends';
+    return row.requester_id === viewerId ? 'pending_outgoing' : 'pending_incoming';
+  }
+
+  listFriends(userId: string): PublicUser[] {
+    const rows = this.db
+      .prepare(
+        `SELECT u.* FROM friendships f
+         JOIN users u ON u.id = CASE WHEN f.requester_id = ? THEN f.addressee_id ELSE f.requester_id END
+         WHERE (f.requester_id = ? OR f.addressee_id = ?) AND f.status = 'ACCEPTED'
+         ORDER BY u.full_name COLLATE NOCASE`,
+      )
+      .all(userId, userId, userId) as Record<string, unknown>[];
+    return rows.map((r) => this.toPublic(this.mapUser(r)!));
+  }
+
+  listIncomingRequests(userId: string): PublicUser[] {
+    const rows = this.db
+      .prepare(
+        `SELECT u.* FROM friendships f JOIN users u ON u.id = f.requester_id
+         WHERE f.addressee_id = ? AND f.status = 'PENDING' ORDER BY f.created_at DESC`,
+      )
+      .all(userId) as Record<string, unknown>[];
+    return rows.map((r) => this.toPublic(this.mapUser(r)!));
+  }
+
+  listOutgoingRequests(userId: string): PublicUser[] {
+    const rows = this.db
+      .prepare(
+        `SELECT u.* FROM friendships f JOIN users u ON u.id = f.addressee_id
+         WHERE f.requester_id = ? AND f.status = 'PENDING' ORDER BY f.created_at DESC`,
+      )
+      .all(userId) as Record<string, unknown>[];
+    return rows.map((r) => this.toPublic(this.mapUser(r)!));
+  }
+
   /**
    * How (if at all) `subscriberId` is subscribed to `subjectId`. Returns the
    * source ('FRIEND' for a direct friend subscription, 'GROUP' for a shared
@@ -395,7 +497,7 @@ export class Repository {
         "SELECT 1 FROM subscriptions WHERE subscriber_id = ? AND kind = 'FRIEND' AND target_id = ?",
       )
       .get(subscriberId, subjectId);
-    if (direct) return 'FRIEND';
+    if (direct && this.areFriends(subscriberId, subjectId)) return 'FRIEND';
     const viaGroup = this.db
       .prepare(
         `SELECT 1 FROM subscriptions s
@@ -533,6 +635,30 @@ export class Repository {
     return r ? this.mapRoom(r) : undefined;
   }
 
+  listAllRooms(): Array<ChatRoom & { messageCount: number; participantCount: number }> {
+    const rows = this.db
+      .prepare(
+        `SELECT r.id, r.subject_id, r.created_at, u.full_name AS subject_name,
+                COUNT(DISTINCT m.id) AS message_count,
+                COUNT(DISTINCT p.user_id) AS participant_count
+         FROM chat_rooms r
+         JOIN users u ON u.id = r.subject_id
+         LEFT JOIN chat_messages m ON m.room_id = r.id
+         LEFT JOIN chat_participants p ON p.room_id = r.id
+         GROUP BY r.id
+         ORDER BY r.created_at DESC`,
+      )
+      .all() as Record<string, unknown>[];
+    return rows.map((r) => ({
+      id: r.id as string,
+      subjectId: r.subject_id as string,
+      subjectName: r.subject_name as string,
+      createdAt: r.created_at as string,
+      messageCount: Number(r.message_count ?? 0),
+      participantCount: Number(r.participant_count ?? 0),
+    }));
+  }
+
   addMessage(msg: { id: string; roomId: string; authorId: string; body: string }): ChatMessage {
     this.db
       .prepare(
@@ -589,6 +715,16 @@ export class Repository {
             .all(roomId, limit)
     ) as Record<string, unknown>[];
     return rows.map((r) => this.mapMessage(r)).reverse();
+  }
+
+  updateMessage(id: string, body: string): ChatMessage | undefined {
+    this.db.prepare('UPDATE chat_messages SET body = ? WHERE id = ?').run(body, id);
+    return this.getMessage(id);
+  }
+
+  deleteMessage(id: string): boolean {
+    const res = this.db.prepare('DELETE FROM chat_messages WHERE id = ?').run(id);
+    return res.changes > 0;
   }
 
   // ---- chat participants (positive authorization) -----------------------

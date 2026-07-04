@@ -7,6 +7,7 @@ import { ProfileWidget } from './ProfileWidget';
 
 const navItems = [
   { to: '/directory', label: 'Directory' },
+  { to: '/friends', label: 'Friends' },
   { to: '/groups', label: 'Groups' },
   { to: '/subscriptions', label: 'Subscriptions' },
   { to: '/wishlist', label: 'My Wishlist' },
