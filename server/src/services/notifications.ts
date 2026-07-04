@@ -20,6 +20,15 @@ import { daysUntilBirthday, nextBirthdayYear } from '../util/dates.js';
 export type NotificationSink = (userId: string, n: Notification) => void;
 export type PoolSink = (pool: CrowdfundingPool) => void;
 
+/** Russian plural for "день/дня/дней" given a day count. */
+function pluralDays(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'день';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'дня';
+  return 'дней';
+}
+
 export class NotificationService {
   constructor(
     private readonly repo: Repository,
@@ -66,7 +75,7 @@ export class NotificationService {
       this.push(
         userId,
         'CHAT_MESSAGE',
-        `New message in ${room.subjectName}'s celebration chat`,
+        `Новое сообщение в чате праздника для ${room.subjectName}`,
         preview,
         { roomId: room.id, count: 1, lastMessageId: message.id },
         dedupeKey,
@@ -79,9 +88,9 @@ export class NotificationService {
     const count = prevCount + 1;
     const title =
       count === 1
-        ? `New message in ${room.subjectName}'s celebration chat`
-        : `${count} new messages in ${room.subjectName}'s celebration chat`;
-    const body = count === 1 ? preview : `Latest — ${preview}`;
+        ? `Новое сообщение в чате праздника для ${room.subjectName}`
+        : `${count} новых сообщений в чате праздника для ${room.subjectName}`;
+    const body = count === 1 ? preview : `Последнее — ${preview}`;
     const data = { roomId: room.id, count, lastMessageId: message.id };
 
     this.repo.refreshNotification(existing.id, title, body, data);
@@ -111,8 +120,8 @@ export class NotificationService {
           const created = this.push(
             subscriberId,
             'REMINDER',
-            `${subject.fullName}'s birthday in ${offset} day${offset === 1 ? '' : 's'}`,
-            `Don't forget — ${subject.fullName} turns another year older soon. Time to plan!`,
+            `День рождения ${subject.fullName} через ${offset} ${pluralDays(offset)}`,
+            `Не забудьте — скоро ${subject.fullName} станет на год старше. Пора планировать подарок!`,
             { subjectId: subject.id, daysUntil: offset },
             dedupeKey,
           );
@@ -149,8 +158,8 @@ export class NotificationService {
           this.push(
             subscriberId,
             'POOL_OPENED',
-            `Gift pool opened for ${subject.fullName}`,
-            `A crowdfunding pool (target ${this.config.poolDefaultTarget}) is now open in the secret chat.`,
+            `Открыт сбор на подарок для ${subject.fullName}`,
+            `В секретном чате открыт сбор на подарок (цель ${this.config.poolDefaultTarget}).`,
             { subjectId: subject.id, poolId, roomId: room.id },
             `pool:${subject.id}:${cycle}`,
           );

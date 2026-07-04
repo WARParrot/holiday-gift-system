@@ -14,7 +14,7 @@ export function authRoutes(ctx: AppContext): Router {
     const body = parseBody(registerSchema, req.body, res);
     if (!body) return;
     if (repo.findUserByEmail(body.email)) {
-      res.status(409).json({ error: 'Email already registered' });
+      res.status(409).json({ error: 'Эта почта уже зарегистрирована' });
       return;
     }
     const id = randomUUID();
@@ -40,7 +40,7 @@ export function authRoutes(ctx: AppContext): Router {
     if (!body) return;
     const user = repo.findUserByEmail(body.email);
     if (!user || !verifyPassword(body.password, user.passwordHash)) {
-      res.status(401).json({ error: 'Invalid email or password' });
+      res.status(401).json({ error: 'Неверная почта или пароль' });
       return;
     }
     const token = signToken({ userId: user.id, role: user.role }, config.jwtSecret, config.jwtTtl);

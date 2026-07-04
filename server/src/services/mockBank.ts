@@ -30,10 +30,10 @@ const MAX_SINGLE_CHARGE = 100_000;
 
 export function processMockCharge(req: MockChargeRequest): MockChargeResult {
   if (!Number.isFinite(req.amount) || req.amount <= 0) {
-    return { ok: false, txRef: '', processedAmount: 0, error: 'Amount must be a positive number' };
+    return { ok: false, txRef: '', processedAmount: 0, error: 'Сумма должна быть положительным числом' };
   }
   if (req.amount > MAX_SINGLE_CHARGE) {
-    return { ok: false, txRef: '', processedAmount: 0, error: 'Amount exceeds per-charge limit' };
+    return { ok: false, txRef: '', processedAmount: 0, error: 'Сумма превышает лимит одной операции' };
   }
   // A real gateway would authorize against a card here. We simulate approval.
   const txRef = `MOCK-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 8).toUpperCase()}`;

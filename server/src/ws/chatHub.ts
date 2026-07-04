@@ -75,40 +75,40 @@ export class ChatHub {
 
   private onMessage(client: Client, raw: string): void {
     if (raw.length > MAX_FRAME_BYTES) {
-      return this.send(client.socket, { type: 'error', error: 'Frame too large' });
+      return this.send(client.socket, { type: 'error', error: 'Слишком большой кадр' });
     }
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
     } catch {
-      return this.send(client.socket, { type: 'error', error: 'Malformed frame' });
+      return this.send(client.socket, { type: 'error', error: 'Некорректный кадр' });
     }
     const result = wsClientFrameSchema.safeParse(parsed);
     if (!result.success) {
-      return this.send(client.socket, { type: 'error', error: 'Invalid frame' });
+      return this.send(client.socket, { type: 'error', error: 'Неверный формат кадра' });
     }
     const frame = result.data;
 
     if (frame.type === 'auth') {
       const principal = verifyToken(frame.token, this.config.jwtSecret);
-      if (!principal) return this.send(client.socket, { type: 'error', error: 'Invalid token' });
+      if (!principal) return this.send(client.socket, { type: 'error', error: 'Неверный токен' });
       // Re-validate against the DB: a token for a since-deleted user must not
       // grant a live socket (mirrors the REST auth re-check).
       if (!this.repo.findUserById(principal.userId)) {
-        return this.send(client.socket, { type: 'error', error: 'Invalid token' });
+        return this.send(client.socket, { type: 'error', error: 'Неверный токен' });
       }
       client.userId = principal.userId;
       return this.send(client.socket, { type: 'ready', userId: principal.userId });
     }
 
     if (!client.userId) {
-      return this.send(client.socket, { type: 'error', error: 'Not authenticated' });
+      return this.send(client.socket, { type: 'error', error: 'Вы не аутентифицированы' });
     }
 
     if (frame.type === 'join') {
       const decision = canAccessRoom(this.repo, frame.roomId, client.userId);
       if (!decision.allowed) {
-        return this.send(client.socket, { type: 'error', error: `Access denied (${decision.reason})` });
+        return this.send(client.socket, { type: 'error', error: `Доступ запрещён (${decision.reason})` });
       }
       client.rooms.add(frame.roomId);
       const messages = this.repo.listMessages(frame.roomId);
@@ -121,7 +121,7 @@ export class ChatHub {
     if (frame.type === 'message') {
       const decision = canAccessRoom(this.repo, frame.roomId, client.userId);
       if (!decision.allowed) {
-        return this.send(client.socket, { type: 'error', error: `Access denied (${decision.reason})` });
+        return this.send(client.socket, { type: 'error', error: `Доступ запрещён (${decision.reason})` });
       }
       const body = frame.body.trim();
       if (!body) return;

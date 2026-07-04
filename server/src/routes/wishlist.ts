@@ -43,11 +43,11 @@ export function wishlistRoutes(ctx: AppContext): Router {
   router.put('/item/:id', (req, res) => {
     const existing = repo.getWishlistItem(req.params.id);
     if (!existing) {
-      res.status(404).json({ error: 'Item not found' });
+      res.status(404).json({ error: 'Пункт не найден' });
       return;
     }
     if (existing.ownerId !== req.principal!.userId) {
-      res.status(403).json({ error: 'You can only edit your own wishlist items' });
+      res.status(403).json({ error: 'Вы можете редактировать только свои желания' });
       return;
     }
     const body = parseBody(wishlistUpdateSchema, req.body, res);
@@ -69,11 +69,11 @@ export function wishlistRoutes(ctx: AppContext): Router {
   router.delete('/item/:id', (req, res) => {
     const existing = repo.getWishlistItem(req.params.id);
     if (!existing) {
-      res.status(404).json({ error: 'Item not found' });
+      res.status(404).json({ error: 'Пункт не найден' });
       return;
     }
     if (existing.ownerId !== req.principal!.userId) {
-      res.status(403).json({ error: 'You can only delete your own wishlist items' });
+      res.status(403).json({ error: 'Вы можете удалять только свои желания' });
       return;
     }
     repo.deleteWishlistItem(req.params.id);
@@ -84,14 +84,14 @@ export function wishlistRoutes(ctx: AppContext): Router {
   router.patch('/item/:id/status', (req, res) => {
     const existing = repo.getWishlistItem(req.params.id);
     if (!existing) {
-      res.status(404).json({ error: 'Item not found' });
+      res.status(404).json({ error: 'Пункт не найден' });
       return;
     }
     const body = parseBody(wishlistStatusSchema, req.body, res);
     if (!body) return;
     // A viewer must not mark their OWN item as suggested/reserved.
     if (existing.ownerId === req.principal!.userId) {
-      res.status(403).json({ error: 'You cannot change the status of your own item' });
+      res.status(403).json({ error: 'Нельзя менять статус собственного пункта' });
       return;
     }
     repo.setWishlistStatus(req.params.id, body.status);

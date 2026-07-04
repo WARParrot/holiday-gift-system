@@ -16,9 +16,9 @@ export function parseBody<S extends ZodTypeAny>(
     return schema.parse(body) as z.infer<S>;
   } catch (err) {
     if (err instanceof ZodError) {
-      res.status(400).json({ error: 'Validation failed', details: err.flatten() });
+      res.status(400).json({ error: 'Проверка данных не пройдена', details: err.flatten() });
     } else {
-      res.status(400).json({ error: 'Invalid request body' });
+      res.status(400).json({ error: 'Некорректное тело запроса' });
     }
     return null;
   }

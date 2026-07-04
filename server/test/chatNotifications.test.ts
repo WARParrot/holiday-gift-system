@@ -51,7 +51,7 @@ test('chat notifications collapse into a single per-room counter', () => {
   const list = repo.listNotifications(recipient.id).filter((n) => n.type === 'CHAT_MESSAGE');
   assert.equal(list.length, 1, 'exactly one collapsed notification');
   assert.equal(list[0].data.count, 3);
-  assert.match(list[0].title, /3 new messages/);
+  assert.match(list[0].title, /3 новых сообщений/);
   assert.equal(list[0].read, false);
 
   // The live sink fired once per message (create + two bumps).
@@ -127,5 +127,5 @@ test('reading a chat notification resets the counter on the next message', () =>
   assert.equal(after.length, 1, 'still a single row (same dedupe key)');
   assert.equal(after[0].data.count, 1);
   assert.equal(after[0].read, false);
-  assert.match(after[0].title, /New message in/);
+  assert.match(after[0].title, /Новое сообщение/);
 });
