@@ -30,13 +30,13 @@ export function requireAuth(config: AppConfig, repo: Repository) {
     const token = header.startsWith('Bearer ') ? header.slice(7) : '';
     const principal = token ? verifyToken(token, config.jwtSecret) : null;
     if (!principal) {
-      res.status(401).json({ error: 'Authentication required' });
+      res.status(401).json({ error: 'Требуется авторизация' });
       return;
     }
     // Re-validate against the live DB — the token alone is not authoritative.
     const user = repo.findUserById(principal.userId);
     if (!user) {
-      res.status(401).json({ error: 'Account no longer exists' });
+      res.status(401).json({ error: 'Аккаунт больше не существует' });
       return;
     }
     // Trust the DB role, not the (possibly stale) token claim.
@@ -48,7 +48,7 @@ export function requireAuth(config: AppConfig, repo: Repository) {
 /** Require the ADMIN role (must be used after requireAuth). */
 export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   if (req.principal?.role !== 'ADMIN') {
-    res.status(403).json({ error: 'Admin role required' });
+    res.status(403).json({ error: 'Требуется роль администратора' });
     return;
   }
   next();

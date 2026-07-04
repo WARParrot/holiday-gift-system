@@ -104,7 +104,7 @@ export function calendarRoutes(ctx: AppContext): Router {
   router.get('/oauth/:provider/start', async (req, res) => {
     const provider = req.params.provider;
     if (!isProvider(provider)) {
-      res.status(400).json({ error: 'Unknown provider' });
+      res.status(400).json({ error: 'Неизвестный провайдер' });
       return;
     }
     const userId = req.principal!.userId;
@@ -127,7 +127,7 @@ export function calendarRoutes(ctx: AppContext): Router {
     const state = calendarOAuth.buildState(userId, provider);
     const url = calendarOAuth.authorizeUrl(provider, state);
     if (!url) {
-      res.status(500).json({ error: 'Provider not configured' });
+      res.status(500).json({ error: 'Провайдер не настроен' });
       return;
     }
     // The SPA calls this with fetch; return the URL so it can redirect the
@@ -145,7 +145,7 @@ export function calendarRoutes(ctx: AppContext): Router {
     const userId = req.principal!.userId;
     const cfg = config.calendar.yandex;
     if (!cfg) {
-      res.status(409).json({ error: 'Yandex live sync is not enabled on this server (demo mode).' });
+      res.status(409).json({ error: 'Живая синхронизация Yandex не включена на этом сервере (демо-режим).' });
       return;
     }
     const body = parseBody(yandexCalDavConnectSchema, req.body, res);
@@ -157,12 +157,12 @@ export function calendarRoutes(ctx: AppContext): Router {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('Yandex CalDAV verification error:', err);
-      res.status(502).json({ error: 'Could not reach Yandex CalDAV to verify credentials.' });
+      res.status(502).json({ error: 'Не удалось связаться с Yandex CalDAV для проверки данных.' });
       return;
     }
     if (!ok) {
       res.status(401).json({
-        error: 'Yandex rejected the login or app password. Use an app password from Yandex ID → App passwords → Calendar.',
+        error: 'Yandex отклонил логин или пароль приложения. Используйте пароль приложения из Yandex ID → Пароли приложений → Календарь.',
       });
       return;
     }
@@ -185,7 +185,7 @@ export function calendarRoutes(ctx: AppContext): Router {
   router.delete('/connections/:provider', (req, res) => {
     const provider = req.params.provider;
     if (!isProvider(provider)) {
-      res.status(400).json({ error: 'Unknown provider' });
+      res.status(400).json({ error: 'Неизвестный провайдер' });
       return;
     }
     repo.disconnectCalendar(req.principal!.userId, provider);

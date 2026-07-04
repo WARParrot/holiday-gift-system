@@ -23,13 +23,13 @@ export function groupRoutes(ctx: AppContext): Router {
 
   router.post('/invitations/:invitationId/accept', (req, res) => {
     const invitation = repo.acceptGroupInvitation(req.params.invitationId, req.principal!.userId);
-    if (!invitation) return res.status(404).json({ error: 'Pending invitation not found' });
+    if (!invitation) return res.status(404).json({ error: 'Приглашение не найдено' });
     return res.json({ invitation, group: repo.getGroup(invitation.groupId), members: repo.listGroupMembers(invitation.groupId) });
   });
 
   router.post('/invitations/:invitationId/decline', (req, res) => {
     const declined = repo.declineGroupInvitation(req.params.invitationId, req.principal!.userId);
-    if (!declined) return res.status(404).json({ error: 'Pending invitation not found' });
+    if (!declined) return res.status(404).json({ error: 'Приглашение не найдено' });
     return res.json({ ok: true });
   });
 
@@ -51,7 +51,7 @@ export function groupRoutes(ctx: AppContext): Router {
 
   router.get('/:id', (req, res) => {
     const group = repo.getGroup(req.params.id);
-    if (!group) return res.status(404).json({ error: 'Group not found' });
+    if (!group) return res.status(404).json({ error: 'Группа не найдена' });
     const isOwner = group.ownerId === req.principal!.userId;
     res.json({
       group,
@@ -63,9 +63,9 @@ export function groupRoutes(ctx: AppContext): Router {
 
   router.post('/:id/join', (req, res) => {
     const group = repo.getGroup(req.params.id);
-    if (!group) return res.status(404).json({ error: 'Group not found' });
+    if (!group) return res.status(404).json({ error: 'Группа не найдена' });
     if (group.visibility === 'INVITE' && group.ownerId !== req.principal!.userId) {
-      return res.status(403).json({ error: 'This group is invite-only' });
+      return res.status(403).json({ error: 'Эта группа только по приглашению' });
     }
     repo.addMember(group.id, req.principal!.userId);
     return res.json({ ok: true });
@@ -74,21 +74,21 @@ export function groupRoutes(ctx: AppContext): Router {
   // Owner invite widget backend: creates a pending invitation. The invitee must accept before membership changes.
   router.post('/:id/invite', (req, res) => {
     const group = repo.getGroup(req.params.id);
-    if (!group) return res.status(404).json({ error: 'Group not found' });
-    if (group.ownerId !== req.principal!.userId) return res.status(403).json({ error: 'Only the group owner can invite members' });
+    if (!group) return res.status(404).json({ error: 'Группа не найдена' });
+    if (group.ownerId !== req.principal!.userId) return res.status(403).json({ error: 'Приглашать участников может только владелец группы' });
     const body = parseBody(inviteSchema, req.body, res);
     if (!body) return;
-    if (!repo.findUserById(body.userId)) return res.status(404).json({ error: 'User not found' });
-    if (repo.isMember(group.id, body.userId)) return res.status(409).json({ error: 'User is already a member' });
+    if (!repo.findUserById(body.userId)) return res.status(404).json({ error: 'Пользователь не найден' });
+    if (repo.isMember(group.id, body.userId)) return res.status(409).json({ error: 'Пользователь уже участник группы' });
     const invitation = repo.createGroupInvitation(group.id, req.principal!.userId, body.userId);
     return res.status(201).json({ invitation, pendingInvitations: repo.listPendingGroupInvitationsByGroup(group.id) });
   });
 
   router.post('/:id/leave', (req, res) => {
     const group = repo.getGroup(req.params.id);
-    if (!group) return res.status(404).json({ error: 'Group not found' });
+    if (!group) return res.status(404).json({ error: 'Группа не найдена' });
     const leaver = req.principal!.userId;
-    if (!repo.isMember(group.id, leaver)) return res.status(404).json({ error: 'You are not a member of this group' });
+    if (!repo.isMember(group.id, leaver)) return res.status(404).json({ error: 'Вы не состоите в этой группе' });
 
     repo.removeMember(group.id, leaver);
     const remaining = repo.memberIdsOfGroup(group.id);

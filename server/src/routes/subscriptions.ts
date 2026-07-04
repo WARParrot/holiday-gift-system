@@ -32,22 +32,22 @@ export function subscriptionRoutes(ctx: AppContext): Router {
     if (body.kind === 'FRIEND') {
       const target = repo.findUserById(body.targetId);
       if (!target) {
-        res.status(404).json({ error: 'Friend not found' });
+        res.status(404).json({ error: 'Друг не найден' });
         return;
       }
       if (target.id === me) {
-        res.status(400).json({ error: 'You cannot subscribe to your own birthday' });
+        res.status(400).json({ error: 'Нельзя подписаться на свой день рождения' });
         return;
       }
       if (!repo.areFriends(me, target.id)) {
-        res.status(403).json({ error: 'You must be friends before subscribing to this person' });
+        res.status(403).json({ error: 'Сначала добавьте человека в друзья, чтобы подписаться' });
         return;
       }
       subjects = [target];
     } else {
       const group = repo.getGroup(body.targetId);
       if (!group) {
-        res.status(404).json({ error: 'Group not found' });
+        res.status(404).json({ error: 'Группа не найдена' });
         return;
       }
       subjects = repo

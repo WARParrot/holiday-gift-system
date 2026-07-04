@@ -38,7 +38,7 @@ export function adminRoutes(ctx: AppContext): Router {
     const body = parseBody(adminUserUpsertSchema, req.body, res);
     if (!body) return;
     if (repo.findUserByEmail(body.email)) {
-      res.status(409).json({ error: 'Email already registered' });
+      res.status(409).json({ error: 'Эта почта уже зарегистрирована' });
       return;
     }
     const id = randomUUID();
@@ -59,7 +59,7 @@ export function adminRoutes(ctx: AppContext): Router {
   router.put('/users/:id', (req, res) => {
     const existing = repo.findUserById(req.params.id);
     if (!existing) {
-      res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'Пользователь не найден' });
       return;
     }
     const body = parseBody(adminUserUpsertSchema, req.body, res);
@@ -71,7 +71,7 @@ export function adminRoutes(ctx: AppContext): Router {
 
   router.delete('/users/:id', (req, res) => {
     if (!repo.findUserById(req.params.id)) {
-      res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'Пользователь не найден' });
       return;
     }
     repo.deleteUser(req.params.id);
@@ -82,7 +82,7 @@ export function adminRoutes(ctx: AppContext): Router {
   router.patch('/users/:id/balance', (req, res) => {
     const user = repo.findUserById(req.params.id);
     if (!user) {
-      res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'Пользователь не найден' });
       return;
     }
     const body = parseBody(adminBalanceSchema, req.body, res);
@@ -94,12 +94,12 @@ export function adminRoutes(ctx: AppContext): Router {
       userId: user.id,
       kind: 'ADMIN_ADJUST',
       amount: delta,
-      memo: body.memo || `Admin ${body.mode} by ${req.principal!.userId}`,
+      memo: body.memo || `Корректировка администратора (${body.mode})`,
       txRef: `ADMIN-${Date.now().toString(36).toUpperCase()}`,
       allowNegative: true,
     });
     if (!tx) {
-      res.status(400).json({ error: 'Adjustment failed' });
+      res.status(400).json({ error: 'Не удалось изменить баланс' });
       return;
     }
     res.json({ user: repo.toPublic(repo.findUserById(user.id)!), transaction: tx });
@@ -108,7 +108,7 @@ export function adminRoutes(ctx: AppContext): Router {
   // GET /api/admin/users/:id/wallet — a user's balance + ledger
   router.get('/users/:id/wallet', (req, res) => {
     if (!repo.findUserById(req.params.id)) {
-      res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'Пользователь не найден' });
       return;
     }
     res.json({
@@ -129,7 +129,7 @@ export function adminRoutes(ctx: AppContext): Router {
   router.put('/pools/:id', (req, res) => {
     const pool = repo.getPoolById(req.params.id);
     if (!pool) {
-      res.status(404).json({ error: 'Pool not found' });
+      res.status(404).json({ error: 'Сбор не найден' });
       return;
     }
     const body = parseBody(adminPoolFinanceSchema, req.body, res);
@@ -158,7 +158,7 @@ export function adminRoutes(ctx: AppContext): Router {
     if (!body) return;
     const ownerId = body.ownerId ?? req.principal!.userId;
     if (!repo.findUserById(ownerId)) {
-      res.status(400).json({ error: 'Owner user not found' });
+      res.status(400).json({ error: 'Владелец не найден' });
       return;
     }
     const group = {
@@ -177,13 +177,13 @@ export function adminRoutes(ctx: AppContext): Router {
   router.put('/groups/:id', (req, res) => {
     const group = repo.getGroup(req.params.id);
     if (!group) {
-      res.status(404).json({ error: 'Group not found' });
+      res.status(404).json({ error: 'Группа не найдена' });
       return;
     }
     const body = parseBody(adminGroupUpsertSchema, req.body, res);
     if (!body) return;
     if (body.ownerId && !repo.findUserById(body.ownerId)) {
-      res.status(400).json({ error: 'Owner user not found' });
+      res.status(400).json({ error: 'Владелец не найден' });
       return;
     }
     repo.updateGroup(group.id, {
@@ -204,13 +204,13 @@ export function adminRoutes(ctx: AppContext): Router {
   router.post('/groups/:id/members', (req, res) => {
     const group = repo.getGroup(req.params.id);
     if (!group) {
-      res.status(404).json({ error: 'Group not found' });
+      res.status(404).json({ error: 'Группа не найдена' });
       return;
     }
     const body = parseBody(adminGroupMemberSchema, req.body, res);
     if (!body) return;
     if (!repo.findUserById(body.userId)) {
-      res.status(400).json({ error: 'User not found' });
+      res.status(400).json({ error: 'Пользователь не найден' });
       return;
     }
     repo.addMember(group.id, body.userId);
@@ -220,7 +220,7 @@ export function adminRoutes(ctx: AppContext): Router {
   router.delete('/groups/:id/members/:userId', (req, res) => {
     const group = repo.getGroup(req.params.id);
     if (!group) {
-      res.status(404).json({ error: 'Group not found' });
+      res.status(404).json({ error: 'Группа не найдена' });
       return;
     }
     repo.removeMember(group.id, req.params.userId);
@@ -243,12 +243,12 @@ export function adminRoutes(ctx: AppContext): Router {
   });
 
   router.get('/rooms/:roomId/messages', (req, res) => {
-    if (!repo.getRoomById(req.params.roomId)) return res.status(404).json({ error: 'Room not found' });
+    if (!repo.getRoomById(req.params.roomId)) return res.status(404).json({ error: 'Комната не найдена' });
     res.json({ messages: repo.listMessages(req.params.roomId, { limit: 200 }) });
   });
 
   router.post('/rooms/:roomId/messages', (req, res) => {
-    if (!repo.getRoomById(req.params.roomId)) return res.status(404).json({ error: 'Room not found' });
+    if (!repo.getRoomById(req.params.roomId)) return res.status(404).json({ error: 'Комната не найдена' });
     const body = parseBody(messageEditSchema, req.body, res);
     if (!body) return;
     const message = repo.addMessage({ id: randomUUID(), roomId: req.params.roomId, authorId: req.principal!.userId, body: body.body });
@@ -258,7 +258,7 @@ export function adminRoutes(ctx: AppContext): Router {
 
   router.patch('/messages/:messageId', (req, res) => {
     const existing = repo.getMessage(req.params.messageId);
-    if (!existing) return res.status(404).json({ error: 'Message not found' });
+    if (!existing) return res.status(404).json({ error: 'Сообщение не найдено' });
     const body = parseBody(messageEditSchema, req.body, res);
     if (!body) return;
     const message = repo.updateMessage(existing.id, body.body)!;
@@ -268,7 +268,7 @@ export function adminRoutes(ctx: AppContext): Router {
 
   router.delete('/messages/:messageId', (req, res) => {
     const existing = repo.getMessage(req.params.messageId);
-    if (!existing) return res.status(404).json({ error: 'Message not found' });
+    if (!existing) return res.status(404).json({ error: 'Сообщение не найдено' });
     repo.deleteMessage(existing.id);
     ctx.hub.current?.broadcastToRoom(existing.roomId, { type: 'message-deleted', id: existing.id, roomId: existing.roomId });
     return res.json({ ok: true });
@@ -298,7 +298,7 @@ export function adminRoutes(ctx: AppContext): Router {
     try {
       records = body.format === 'json' ? parseJsonUsers(body.payload) : parseCsvUsers(body.payload);
     } catch (err) {
-      res.status(400).json({ error: `Failed to parse ${body.format}`, details: String(err) });
+      res.status(400).json({ error: `Не удалось разобрать формат ${body.format}`, details: String(err) });
       return;
     }
 
@@ -339,7 +339,7 @@ function csvEscape(value: string): string {
 
 function parseJsonUsers(payload: string): Array<Partial<UserRow> & { password?: string }> {
   const parsed = JSON.parse(payload);
-  if (!Array.isArray(parsed)) throw new Error('JSON payload must be an array');
+  if (!Array.isArray(parsed)) throw new Error('JSON должен быть массивом');
   return parsed as Array<Partial<UserRow> & { password?: string }>;
 }
 

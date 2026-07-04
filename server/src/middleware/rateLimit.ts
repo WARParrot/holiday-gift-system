@@ -61,7 +61,7 @@ export function createRateLimiter(options: RateLimitOptions) {
       const retryAfter = Math.ceil((bucket.resetAt - now) / 1000);
       res.setHeader('Retry-After', String(retryAfter));
       res.status(429).json({
-        error: `Too many ${label ? `${label} ` : ''}requests. Try again in ${retryAfter}s.`,
+        error: `Слишком много запросов${label ? ` (${label})` : ''}. Попробуйте снова через ${retryAfter} с.`,
       });
       return;
     }

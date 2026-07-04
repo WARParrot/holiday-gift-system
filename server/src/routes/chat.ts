@@ -30,14 +30,14 @@ export function chatRoutes(ctx: AppContext): Router {
     const subjectId = req.params.subjectId;
     const subject = repo.findUserById(subjectId);
     if (!subject) {
-      res.status(404).json({ error: 'Subject not found' });
+      res.status(404).json({ error: 'Пользователь не найден' });
       return;
     }
     const eligibility = checkEligibility(repo, subjectId, requesterId);
     if (!eligibility.eligible) {
       // The birthday person (or a stranger with no relationship) gets a hard
       // 403 — they must not learn whether the room exists.
-      res.status(403).json({ error: 'This chat is not available to you' });
+      res.status(403).json({ error: 'Этот чат вам недоступен' });
       return;
     }
     const existingRoom = repo.getRoomBySubject(subjectId);
@@ -58,7 +58,7 @@ export function chatRoutes(ctx: AppContext): Router {
     const access = canAccessRoom(repo, req.params.roomId, req.principal!.userId);
     if (!access.allowed) {
       res.status(access.reason === 'ROOM_NOT_FOUND' ? 404 : 403).json({
-        error: access.reason === 'ROOM_NOT_FOUND' ? 'Room not found' : 'This chat is not available to you',
+        error: access.reason === 'ROOM_NOT_FOUND' ? 'Комната не найдена' : 'Этот чат вам недоступен',
       });
       return;
     }
@@ -75,7 +75,7 @@ export function chatRoutes(ctx: AppContext): Router {
     const access = canAccessRoom(repo, req.params.roomId, req.principal!.userId);
     if (!access.allowed) {
       res.status(access.reason === 'ROOM_NOT_FOUND' ? 404 : 403).json({
-        error: access.reason === 'ROOM_NOT_FOUND' ? 'Room not found' : 'This chat is not available to you',
+        error: access.reason === 'ROOM_NOT_FOUND' ? 'Комната не найдена' : 'Этот чат вам недоступен',
       });
       return;
     }
@@ -94,17 +94,17 @@ export function chatRoutes(ctx: AppContext): Router {
     const access = canAccessRoom(repo, req.params.roomId, req.principal!.userId);
     if (!access.allowed) {
       res.status(access.reason === 'ROOM_NOT_FOUND' ? 404 : 403).json({
-        error: access.reason === 'ROOM_NOT_FOUND' ? 'Room not found' : 'This chat is not available to you',
+        error: access.reason === 'ROOM_NOT_FOUND' ? 'Комната не найдена' : 'Этот чат вам недоступен',
       });
       return;
     }
     const body = String((req.body as { body?: unknown }).body ?? '').trim();
     if (!body) {
-      res.status(400).json({ error: 'Message body is required' });
+      res.status(400).json({ error: 'Текст сообщения обязателен' });
       return;
     }
     if (body.length > 4000) {
-      res.status(400).json({ error: 'Message exceeds the 4000-character limit' });
+      res.status(400).json({ error: 'Сообщение превышает лимит в 4000 символов' });
       return;
     }
     const message = repo.addMessage({
@@ -125,12 +125,12 @@ export function chatRoutes(ctx: AppContext): Router {
     const requesterId = req.principal!.userId;
     const access = canAccessRoom(repo, req.params.roomId, requesterId);
     if (!access.allowed) {
-      res.status(access.reason === 'ROOM_NOT_FOUND' ? 404 : 403).json({ error: 'This chat is not available to you' });
+      res.status(access.reason === 'ROOM_NOT_FOUND' ? 404 : 403).json({ error: 'Этот чат вам недоступен' });
       return;
     }
     const existing = repo.getMessage(req.params.messageId);
-    if (!existing || existing.roomId !== req.params.roomId) return res.status(404).json({ error: 'Message not found' });
-    if (existing.authorId !== requesterId) return res.status(403).json({ error: 'You can only edit your own messages' });
+    if (!existing || existing.roomId !== req.params.roomId) return res.status(404).json({ error: 'Сообщение не найдено' });
+    if (existing.authorId !== requesterId) return res.status(403).json({ error: 'Вы можете редактировать только свои сообщения' });
     const body = parseBody(messageEditSchema, req.body, res);
     if (!body) return;
     const message = repo.updateMessage(existing.id, body.body)!;
@@ -142,12 +142,12 @@ export function chatRoutes(ctx: AppContext): Router {
     const requesterId = req.principal!.userId;
     const access = canAccessRoom(repo, req.params.roomId, requesterId);
     if (!access.allowed) {
-      res.status(access.reason === 'ROOM_NOT_FOUND' ? 404 : 403).json({ error: 'This chat is not available to you' });
+      res.status(access.reason === 'ROOM_NOT_FOUND' ? 404 : 403).json({ error: 'Этот чат вам недоступен' });
       return;
     }
     const existing = repo.getMessage(req.params.messageId);
-    if (!existing || existing.roomId !== req.params.roomId) return res.status(404).json({ error: 'Message not found' });
-    if (existing.authorId !== requesterId) return res.status(403).json({ error: 'You can only delete your own messages' });
+    if (!existing || existing.roomId !== req.params.roomId) return res.status(404).json({ error: 'Сообщение не найдено' });
+    if (existing.authorId !== requesterId) return res.status(403).json({ error: 'Вы можете удалять только свои сообщения' });
     repo.deleteMessage(existing.id);
     ctx.hub.current?.broadcastToRoom(req.params.roomId, { type: 'message-deleted', id: existing.id, roomId: req.params.roomId });
     return res.json({ ok: true });
@@ -157,7 +157,7 @@ export function chatRoutes(ctx: AppContext): Router {
   router.get('/rooms/:roomId/pool', (req, res) => {
     const access = canAccessRoom(repo, req.params.roomId, req.principal!.userId);
     if (!access.allowed) {
-      res.status(access.reason === 'ROOM_NOT_FOUND' ? 404 : 403).json({ error: 'Not available' });
+      res.status(access.reason === 'ROOM_NOT_FOUND' ? 404 : 403).json({ error: 'Недоступно' });
       return;
     }
     const pool = repo.getPoolByRoom(req.params.roomId);
@@ -173,18 +173,18 @@ export function chatRoutes(ctx: AppContext): Router {
     const requesterId = req.principal!.userId;
     const access = canAccessRoom(repo, req.params.roomId, requesterId);
     if (!access.allowed) {
-      res.status(access.reason === 'ROOM_NOT_FOUND' ? 404 : 403).json({ error: 'Not available' });
+      res.status(access.reason === 'ROOM_NOT_FOUND' ? 404 : 403).json({ error: 'Недоступно' });
       return;
     }
     const body = parseBody(contributeSchema, req.body, res);
     if (!body) return;
     const pool = repo.getPoolByRoom(req.params.roomId);
     if (!pool) {
-      res.status(404).json({ error: 'No open pool for this room' });
+      res.status(404).json({ error: 'Для этой комнаты нет открытого сбора' });
       return;
     }
     if (pool.status !== 'OPEN') {
-      res.status(409).json({ error: 'This pool is closed to new contributions' });
+      res.status(409).json({ error: 'Сбор закрыт для новых взносов' });
       return;
     }
 
@@ -193,7 +193,7 @@ export function chatRoutes(ctx: AppContext): Router {
     const balance = repo.getBalance(requesterId);
     if (balance < body.amount) {
       res.status(402).json({
-        error: `Insufficient balance. Your balance is ${balance.toFixed(2)}; top up on the Payment page.`,
+        error: `Недостаточно средств. Ваш баланс ${balance.toFixed(2)}; пополните на вкладке «Оплата».`,
       });
       return;
     }
@@ -205,7 +205,7 @@ export function chatRoutes(ctx: AppContext): Router {
       currentBalance: pool.currentBalance,
     });
     if (!charge.ok) {
-      res.status(402).json({ error: charge.error ?? 'Payment failed' });
+      res.status(402).json({ error: charge.error ?? 'Платёж отклонён' });
       return;
     }
 
@@ -214,11 +214,11 @@ export function chatRoutes(ctx: AppContext): Router {
       userId: requesterId,
       kind: 'CONTRIBUTION',
       amount: -charge.processedAmount,
-      memo: `Gift pool for ${pool.subjectName}`,
+      memo: `Сбор на подарок для ${pool.subjectName}`,
       txRef: charge.txRef,
     });
     if (!debit) {
-      res.status(402).json({ error: 'Insufficient balance' });
+      res.status(402).json({ error: 'Недостаточно средств' });
       return;
     }
 
@@ -237,8 +237,8 @@ export function chatRoutes(ctx: AppContext): Router {
     notifications.push(
       requesterId,
       'SYSTEM',
-      'Contribution received',
-      `Your contribution of ${charge.processedAmount} to ${pool.subjectName}'s gift pool was recorded (${charge.txRef}). New balance: ${debit.balanceAfter.toFixed(2)}.`,
+      'Взнос получен',
+      `Ваш взнос ${charge.processedAmount} в сбор для ${pool.subjectName} записан (${charge.txRef}). Новый баланс: ${debit.balanceAfter.toFixed(2)}.`,
       { poolId: pool.id, txRef: charge.txRef },
     );
 

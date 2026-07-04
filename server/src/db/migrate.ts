@@ -146,8 +146,8 @@ function main(): void {
   // the seeded secret chat + gift pool are populated and usable out of the box.
   repo.addParticipant(carolRoom.id, alice.id, 'ORGANIZER', 'FRIEND');
   repo.addParticipant(carolRoom.id, bob.id, 'PARTICIPANT', 'GROUP');
-  repo.addMessage({ id: randomUUID(), roomId: carolRoom.id, authorId: alice.id, body: "Let's chip in for Carol's mechanical keyboard! 🎹" });
-  repo.addMessage({ id: randomUUID(), roomId: carolRoom.id, authorId: bob.id, body: 'Great idea — I just added to the pool.' });
+  repo.addMessage({ id: randomUUID(), roomId: carolRoom.id, authorId: alice.id, body: 'Давайте скинемся Кэрол на механическую клавиатуру! 🎹' });
+  repo.addMessage({ id: randomUUID(), roomId: carolRoom.id, authorId: bob.id, body: 'Отличная идея — я только что внёс в сбор.' });
 
   // Seed a couple of real contributions, debiting the contributors' wallets so
   // balances and the pool total are internally consistent.

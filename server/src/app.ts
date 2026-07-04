@@ -117,7 +117,7 @@ export function buildApp(
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     // eslint-disable-next-line no-console
     console.error('Unhandled error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
   });
 
   return { app, ctx };

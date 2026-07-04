@@ -30,7 +30,7 @@ export function userRoutes(ctx: AppContext): Router {
   router.get('/me', (req, res) => {
     const user = repo.findUserById(req.principal!.userId);
     if (!user) {
-      res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'Пользователь не найден' });
       return;
     }
     res.json({ user: repo.toPublic(user) });
@@ -49,7 +49,7 @@ export function userRoutes(ctx: AppContext): Router {
     const requesterId = req.principal!.userId;
     const subject = repo.findUserById(req.params.id);
     if (!subject) {
-      res.status(404).json({ error: 'User not found' });
+      res.status(404).json({ error: 'Пользователь не найден' });
       return;
     }
 

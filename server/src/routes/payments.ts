@@ -43,7 +43,7 @@ export function paymentRoutes(ctx: AppContext): Router {
       currentBalance: repo.getBalance(userId),
     });
     if (!charge.ok) {
-      res.status(402).json({ error: charge.error ?? 'Payment failed' });
+      res.status(402).json({ error: charge.error ?? 'Платёж отклонён' });
       return;
     }
 
@@ -56,15 +56,15 @@ export function paymentRoutes(ctx: AppContext): Router {
       txRef: charge.txRef,
     });
     if (!tx) {
-      res.status(500).json({ error: 'Failed to record top-up' });
+      res.status(500).json({ error: 'Не удалось записать пополнение' });
       return;
     }
 
     ctx.notifications.push(
       userId,
       'SYSTEM',
-      'Wallet topped up',
-      `Added ${charge.processedAmount.toFixed(2)} to your balance (${charge.txRef}).`,
+      'Кошелёк пополнен',
+      `На баланс добавлено ${charge.processedAmount.toFixed(2)} (${charge.txRef}).`,
       { txRef: charge.txRef, amount: charge.processedAmount },
     );
 
